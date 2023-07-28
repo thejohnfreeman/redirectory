@@ -1,5 +1,4 @@
 import express from 'express'
-import getRawBody from 'raw-body'
 import fetch from 'node-fetch'
 import path from 'path'
 import { newOctokit } from './octokit.js'
@@ -10,9 +9,7 @@ const MIME_TYPES = {
   '.tgz': 'application/gzip',
 }
 
-const port = 9494
-
-const app = express()
+const router = express.Router()
 
 function unbase64(input) {
   return Buffer.from(input, 'base64').toString('ascii')
@@ -38,7 +35,7 @@ function httpErrorHandler(err, req, res, next) {
   next(err)
 }
 
-app.use(httpErrorHandler)
+router.use(httpErrorHandler)
 
 function bearer(req) {
   const header = req.get('Authorization')
@@ -59,7 +56,7 @@ function bearer(req) {
   return { user, auth }
 }
 
-app.get('/v1/ping', (req, res) => {
+router.get('/v1/ping', (req, res) => {
   res
     .set('X-Conan-Server-Capabilities', 'complex_search,revisions')
     .send()
@@ -73,7 +70,7 @@ app.get('/v1/ping', (req, res) => {
  * requests.
  * That token is a base64 encoding of `user:ghtoken`.
  */
-app.get('/:api/users/authenticate', (req, res) => {
+router.get('/:api/users/authenticate', (req, res) => {
   const header = req.get('Authorization')
   if (!header) {
     return res.status(400).send('Missing header: Authorization')
@@ -96,7 +93,7 @@ app.get('/:api/users/authenticate', (req, res) => {
  * If it returns 404, then Conan proceeds to call `check_credentials` and then
  * `files`.
  */
-app.get('/:api/conans/:package/:version/:host/:owner/revisions/:revision/files/:filename', (req, res) => {
+router.get('/:api/conans/:package/:version/:host/:owner/revisions/:revision/files/:filename', (req, res) => {
   const repo = req.params.package
   const tag = req.params.version
   const host = req.params.host
@@ -114,7 +111,7 @@ app.get('/:api/conans/:package/:version/:host/:owner/revisions/:revision/files/:
 /**
  * Called during `conan upload`.
  */
-app.get('/:api/users/check_credentials', async (req, res) => {
+router.get('/:api/users/check_credentials', async (req, res) => {
   const { user, auth } = bearer(req)
   const client = req.get('X-Client-Id')
   if (user !== client) {
@@ -137,7 +134,7 @@ app.get('/:api/users/check_credentials', async (req, res) => {
  * If it returns 404, then Conan uploads assets.
  * If it returns 200, then the package exists.
  */
-app.get('/:api/conans/:package/:version/:host/:owner/revisions/:revision/files', async (req, res) => {
+router.get('/:api/conans/:package/:version/:host/:owner/revisions/:revision/files', async (req, res) => {
   const repo = req.params.package
   const tag = req.params.version
   const host = req.params.host
@@ -167,7 +164,7 @@ app.get('/:api/conans/:package/:version/:host/:owner/revisions/:revision/files',
 })
 
 /** This may be impossible to implement. */
-app.get('/:api/conans/search', (req, res) => {
+router.get('/:api/conans/search', (req, res) => {
   const query = req.query.q
   // TODO: Let projects tag themselves #redirectory.
   // Search among tagged projects for package names,
@@ -178,7 +175,7 @@ app.get('/:api/conans/search', (req, res) => {
 /**
  * Called as the first step of `conan install`.
  */
-app.get('/:api/conans/:package/:version/:host/:owner/download_urls', (req, res) => {
+router.get('/:api/conans/:package/:version/:host/:owner/download_urls', (req, res) => {
   const repo = req.params.package
   const tag = req.params.version
   const host = req.params.host
@@ -203,7 +200,7 @@ app.get('/:api/conans/:package/:version/:host/:owner/download_urls', (req, res) 
   return res.send(data)
 })
 
-app.get('/:api/conans/:package/:version/:host/:owner/packages/:binaryId/download_urls', (req, res) => {
+router.get('/:api/conans/:package/:version/:host/:owner/packages/:binaryId/download_urls', (req, res) => {
   // TODO: Implement binary uploads.
   return res.status(404).send()
 })
@@ -211,7 +208,7 @@ app.get('/:api/conans/:package/:version/:host/:owner/packages/:binaryId/download
 /**
  * Called during `conan install`.
  */
-app.get('/:api/conans/:package/:version/:host/:owner/revisions/:revision/packages/:binaryId/latest', (req, res) => {
+router.get('/:api/conans/:package/:version/:host/:owner/revisions/:revision/packages/:binaryId/latest', (req, res) => {
   // TODO: Implement binary downloads.
   return res.status(404).send()
 })
@@ -219,14 +216,14 @@ app.get('/:api/conans/:package/:version/:host/:owner/revisions/:revision/package
 /**
  * Called during `conan install`.
  */
-app.get('/:api/conans/:package/:version/:host/:owner/latest', (req, res) => {
+router.get('/:api/conans/:package/:version/:host/:owner/latest', (req, res) => {
   return res.send({revision: '0', time: new Date().toISOString()})
 })
 
 /**
  * Called during `conan upload`.
  */
-app.put('/:api/conans/:package/:version/:host/:owner/revisions/:revision/files/:filename', async (req, res) => {
+router.put('/:api/conans/:package/:version/:host/:owner/revisions/:revision/files/:filename', async (req, res) => {
   const repo = req.params.package
   const tag = req.params.version
   const host = req.params.host
@@ -283,7 +280,7 @@ app.put('/:api/conans/:package/:version/:host/:owner/revisions/:revision/files/:
 /**
  * Called during `conan remove`.
  */
-app.get('/:api/conans/:package/:version/:host/:owner/revisions', (req, res) => {
+router.get('/:api/conans/:package/:version/:host/:owner/revisions', (req, res) => {
   const repo = req.params.package
   const tag = req.params.version
   const host = req.params.host
@@ -300,7 +297,7 @@ app.get('/:api/conans/:package/:version/:host/:owner/revisions', (req, res) => {
 /**
  * Called during `conan remove`.
  */
-app.delete('/:api/conans/:package/:version/:host/:owner/revisions/:revision', async (req, res) => {
+router.delete('/:api/conans/:package/:version/:host/:owner/revisions/:revision', async (req, res) => {
   const repo = req.params.package
   const tag = req.params.version
   const host = req.params.host
@@ -334,11 +331,9 @@ app.delete('/:api/conans/:package/:version/:host/:owner/revisions/:revision', as
   return res.send()
 })
 
-app.all('*', (req, res) => {
+router.all('*', (req, res) => {
   console.log(req.method, req.originalUrl)
   res.status(501).send()
 })
 
-app.listen(port, () => {
-  console.log(`listening on port ${port}`)
-})
+export default router
