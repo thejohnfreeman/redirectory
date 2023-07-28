@@ -256,8 +256,14 @@ app.put('/:api/conans/:package/:version/:host/:owner/revisions/:revision/files/:
   } catch (error) {
     return res.status(400).send('Incomplete asset')
   }
-  // TODO: Handle missing header, and malformed header.
-  const length = parseInt(req.get('Content-Length'))
+  const header = req.get('Content-Length')
+  if (!header) {
+    return res.status(400).send('Missing header: Content-Length')
+  }
+  const length = parseInt(header)
+  if (Number.isNaN(length)) {
+    return res.status(400).send('Malformed header: Content-Length')
+  }
   if (data.length !== length) {
     return res.status(400).send(`Content length does not match header: ${data.length} != ${length}`)
   }
