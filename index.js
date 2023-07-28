@@ -1,4 +1,4 @@
-import { Octokit } from 'octokit'
+import { Octokit } from '@octokit/core'
 import express from 'express'
 import getRawBody from 'raw-body'
 
