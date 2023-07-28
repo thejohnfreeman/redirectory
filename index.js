@@ -103,13 +103,22 @@ app.get('/:api/conans/:pkg/:version/:host/:owner/revisions/:revision/files/:file
   return res.redirect(301, `https://github.com/${owner}/${pkg}/releases/download/${version}/${file}`)
 })
 
-app.get('/:api/users/check_credentials', (req, res) => {
+app.get('/:api/users/check_credentials', async (req, res) => {
   const { user, auth } = bearer(req)
   const client = req.get('X-Client-Id')
   if (user !== client) {
     console.warn(`Bearer token (${user}) does not match X-Client-Id (${client})`)
   }
-  // TODO: Check that user matches auth.
+  const octokit = new Octokit({ auth })
+  try {
+    const response = await octokit.rest.users.getAuthenticated()
+    const login = response.data.login
+    if (login !== user) {
+      console.warn(`Bearer token (${user}) does not match GitHub token (${login})`)
+    }
+  } catch (error) {
+    return res.status(401).send('Invalid GitHub token')
+  }
   return res.send(user)
 })
 
