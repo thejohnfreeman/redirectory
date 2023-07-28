@@ -216,6 +216,7 @@ app.put('/:api/conans/:pkg/:version/:host/:owner/revisions/:revision/files/:file
       tag: version,
     })
     release_id = response.data.id
+    // TODO: Extract origin from the `download_url`.
     origin = 'uploads.github.com'
   } catch (error) {
     if (error.status !== 404) {
@@ -223,15 +224,15 @@ app.put('/:api/conans/:pkg/:version/:host/:owner/revisions/:revision/files/:file
     }
 
     try {
-      const response = await octokit.rest.repos.createRelease({
+      const response = await octokit.rest.repos.getReleaseByTag({
         owner,
         repo: pkg,
-        tag_name: version,
+        tag_name: `v${version}`,
       })
       release_id = response.data.id
       origin = 'uploads.github.com'
     } catch (error) {
-      return res.status(403).send(`Cannot create release: '${ref}'`)
+      return res.status(403).send(`Cannot find release: '${ref}'`)
     }
   }
 
