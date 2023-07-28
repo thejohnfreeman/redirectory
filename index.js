@@ -161,7 +161,9 @@ app.get('/:api/conans/:package/:version/:host/:owner/revisions/:revision/files',
 /** This may be impossible to implement. */
 app.get('/:api/conans/search', (req, res) => {
   const query = req.query.q
-  // TODO: Get list of releases, or check for specific release
+  // TODO: Let projects tag themselves #redirectory.
+  // Search among tagged projects for package names,
+  // then collect their releases.
   return res.status(501).send()
 })
 
@@ -246,8 +248,7 @@ app.put('/:api/conans/:package/:version/:host/:owner/revisions/:revision/files/:
     return res.status(403).send(`Cannot find release: '${ref}'`)
   }
   const release_id = response.data.id
-  // TODO: Extract origin from the `download_url`.
-  const origin = 'uploads.github.com'
+  const origin = new URL(response.data.upload_url).origin
 
   let data
   try {
