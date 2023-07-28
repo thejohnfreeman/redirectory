@@ -1,6 +1,6 @@
-import { Octokit } from '@octokit/core'
 import express from 'express'
 import getRawBody from 'raw-body'
+import { newOctokit } from './octokit.js'
 
 const port = 9494
 
@@ -103,21 +103,23 @@ app.get('/:api/conans/:pkg/:version/:host/:owner/revisions/:revision/files/:file
   return res.redirect(301, `https://github.com/${owner}/${pkg}/releases/download/${version}/${file}`)
 })
 
+/**
+ * Called during `conan upload`.
+ */
 app.get('/:api/users/check_credentials', async (req, res) => {
   const { user, auth } = bearer(req)
   const client = req.get('X-Client-Id')
   if (user !== client) {
     console.warn(`Bearer token (${user}) does not match X-Client-Id (${client})`)
   }
-  const octokit = new Octokit({ auth })
-  try {
-    const response = await octokit.rest.users.getAuthenticated()
-    const login = response.data.login
-    if (login !== user) {
-      console.warn(`Bearer token (${user}) does not match GitHub token (${login})`)
-    }
-  } catch (error) {
+  const octokit = newOctokit({ auth })
+  const response = await octokit.rest.users.getAuthenticated()
+  if (response.status !== 200) {
     return res.status(401).send('Invalid GitHub token')
+  }
+  const login = response.data.login
+  if (login !== user) {
+    console.warn(`Bearer token (${user}) does not match GitHub token (${login})`)
   }
   return res.send(user)
 })
@@ -139,26 +141,21 @@ app.get('/:api/conans/:pkg/:version/:host/:owner/revisions/:revision/files', asy
   }
 
   const { user, auth } = bearer(req)
-  const octokit = new Octokit({ auth })
-  // TODO: Catch every exception and return error.response instead.
-  try {
-    const response = await octokit.rest.repos.getReleaseByTag({
-      owner,
-      repo: pkg,
-      tag: version
-    })
-
-    const files = {}
-    for (const asset of response.data.assets) {
-      files[asset.name] = {}
-    }
-    return res.send({ files })
-  } catch (error) {
-    if (error.status === 404) {
-      return res.status(404).send(`Recipe not found: ${ref}`)
-    }
-    console.warn(error)
+  const octokit = newOctokit({ auth })
+  const response = await octokit.rest.repos.getReleaseByTag({
+    owner,
+    repo: pkg,
+    tag: version
+  })
+  if (response.status !== 200) {
+    return res.status(404).send(`Recipe not found: ${ref}`)
   }
+
+  const files = {}
+  for (const asset of response.data.assets) {
+    files[asset.name] = {}
+  }
+  return res.send({ files })
 })
 
 /** This may be impossible to implement. */
@@ -215,58 +212,53 @@ app.put('/:api/conans/:pkg/:version/:host/:owner/revisions/:revision/files/:file
   }
 
   const { user, auth } = bearer(req)
-  const octokit = new Octokit({ auth })
+  const octokit = newOctokit({ auth })
 
-  let release_id, origin
-  try {
-    const response = await octokit.rest.repos.getReleaseByTag({
+  let response = await octokit.rest.repos.getReleaseByTag({
+    owner,
+    repo: pkg,
+    tag: version,
+  })
+  if (response.status !== 200) {
+    response = await octokit.rest.repos.getReleaseByTag({
       owner,
       repo: pkg,
-      tag: version,
+      tag_name: `v${version}`,
     })
-    release_id = response.data.id
-    // TODO: Extract origin from the `download_url`.
-    origin = 'uploads.github.com'
-  } catch (error) {
-    if (error.status !== 404) {
-      return res.status(403).send(`Cannot find release: '${ref}'`)
-    }
-
-    try {
-      const response = await octokit.rest.repos.getReleaseByTag({
-        owner,
-        repo: pkg,
-        tag_name: `v${version}`,
-      })
-      release_id = response.data.id
-      origin = 'uploads.github.com'
-    } catch (error) {
-      return res.status(403).send(`Cannot find release: '${ref}'`)
-    }
   }
+  if (response.status !== 200) {
+    return res.status(403).send(`Cannot find release: '${ref}'`)
+  }
+  const release_id = response.data.id
+  // TODO: Extract origin from the `download_url`.
+  const origin = 'uploads.github.com'
 
+  let data
   try {
-    const data = await getRawBody(req)
-    // TODO: Handle missing header, and malformed header.
-    const length = parseInt(req.get('Content-Length'))
-    if (data.length !== length) {
-      return res.status(400).send(`Content length does not match header: ${data.length} != ${length}`)
-    }
-
-    await octokit.rest.repos.uploadReleaseAsset({
-      origin,
-      owner,
-      repo: pkg,
-      release_id,
-      name: req.params.file,
-      data,
-    })
-
-    return res.send()
+    data = await getRawBody(req)
   } catch (error) {
-    console.error(error)
-    return res.status(error.status)
+    return res.status(400).send('Incomplete asset')
   }
+  // TODO: Handle missing header, and malformed header.
+  const length = parseInt(req.get('Content-Length'))
+  if (data.length !== length) {
+    return res.status(400).send(`Content length does not match header: ${data.length} != ${length}`)
+  }
+
+  // TODO: Stream contents.
+  response = await octokit.rest.repos.uploadReleaseAsset({
+    origin,
+    owner,
+    repo: pkg,
+    release_id,
+    name: req.params.file,
+    data,
+  })
+  if (response.status !== 200) {
+    return res.status(response.status).send()
+  }
+
+  return res.send()
 })
 
 /**
@@ -301,29 +293,23 @@ app.delete('/:api/conans/:pkg/:version/:host/:owner/revisions/:revision', async 
   }
 
   const { user, auth } = bearer(req)
-  const octokit = new Octokit({ auth })
+  const octokit = newOctokit({ auth })
 
-  let response
-  try {
-    response = await octokit.rest.repos.getReleaseByTag({
-      owner,
-      repo: pkg,
-      tag: version
-    })
-  } catch (error) {
+  let response = await octokit.rest.repos.getReleaseByTag({
+    owner,
+    repo: pkg,
+    tag: version
+  })
+  if (response.status !== 200) {
     return res.status(403).send(`Cannot find release: '${ref}'`)
   }
 
   for (const asset of response.data.assets) {
-    try {
-      await octokit.rest.repos.deleteReleaseAsset({
-        owner,
-        repo: pkg,
-        asset_id: asset.id
-      })
-    } catch (error) {
-      console.error(error)
-    }
+    await octokit.rest.repos.deleteReleaseAsset({
+      owner,
+      repo: pkg,
+      asset_id: asset.id
+    })
   }
 
   return res.send()
