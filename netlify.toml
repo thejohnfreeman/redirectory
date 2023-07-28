@@ -1,0 +1,2 @@
+[build]
+external_node_modules = ['express']
