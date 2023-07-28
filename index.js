@@ -269,13 +269,11 @@ app.put('/:api/conans/:package/:version/:host/:owner/revisions/:revision/files/:
   }
 
   // TODO: Stream contents.
-  response = await octokit.rest.repos.uploadReleaseAsset({
-    origin,
-    owner,
-    repo,
-    release_id,
-    name: req.params.file,
+  response = await octokit.request(`POST ${origin}/repos/${owner}/${repo}/releases/${release_id}/assets?name=${req.params.file}`, {
     data,
+    headers: {
+      'X-GitHub-Api-Version': '2022-11-28'
+    },
   })
   if (response.status !== 200) {
     return res.status(response.status).send()
