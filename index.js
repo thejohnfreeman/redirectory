@@ -88,19 +88,19 @@ app.get('/:api/users/authenticate', (req, res) => {
  * If it returns 404, then Conan proceeds to call `check_credentials` and then
  * `files`.
  */
-app.get('/:api/conans/:pkg/:version/:host/:owner/revisions/:revision/files/:file', (req, res) => {
-  const pkg = req.params.pkg
-  const version = req.params.version
+app.get('/:api/conans/:package/:version/:host/:owner/revisions/:revision/files/:file', (req, res) => {
+  const repo = req.params.package
+  const tag = req.params.version
   const host = req.params.host
   const owner = req.params.owner
-  const ref = `${pkg}/${version}@${host}/${owner}`
+  const ref = `${repo}/${tag}@${host}/${owner}`
 
   if (host !== 'github') {
-    return res.status(403).send(`Not a GitHub pkg: '${ref}'`)
+    return res.status(403).send(`Not a GitHub package: '${ref}'`)
   }
 
   const file = req.params.file
-  return res.redirect(301, `https://github.com/${owner}/${pkg}/releases/download/${version}/${file}`)
+  return res.redirect(301, `https://github.com/${owner}/${repo}/releases/download/${tag}/${file}`)
 })
 
 /**
@@ -129,23 +129,23 @@ app.get('/:api/users/check_credentials', async (req, res) => {
  * If it returns 404, then Conan uploads assets.
  * If it returns 200, then the package exists.
  */
-app.get('/:api/conans/:pkg/:version/:host/:owner/revisions/:revision/files', async (req, res) => {
-  const pkg = req.params.pkg
-  const version = req.params.version
+app.get('/:api/conans/:package/:version/:host/:owner/revisions/:revision/files', async (req, res) => {
+  const repo = req.params.package
+  const tag = req.params.version
   const host = req.params.host
   const owner = req.params.owner
-  const ref = `${pkg}/${version}@${host}/${owner}`
+  const ref = `${repo}/${tag}@${host}/${owner}`
 
   if (host !== 'github') {
-    return res.status(403).send(`Not a GitHub pkg: '${ref}'`)
+    return res.status(403).send(`Not a GitHub package: '${ref}'`)
   }
 
   const { user, auth } = bearer(req)
   const octokit = newOctokit({ auth })
   const response = await octokit.rest.repos.getReleaseByTag({
     owner,
-    repo: pkg,
-    tag: version
+    repo,
+    tag
   })
   if (response.status !== 200) {
     return res.status(404).send(`Recipe not found: ${ref}`)
@@ -160,20 +160,20 @@ app.get('/:api/conans/:pkg/:version/:host/:owner/revisions/:revision/files', asy
 
 /** This may be impossible to implement. */
 app.get('/:api/conans/search', (req, res) => {
-  const pkg = req.query.q
+  const query = req.query.q
   // TODO: Get list of releases, or check for specific release
-  return res.send({results: [`${pkg}/1.2.13@github/thejohnfreeman`]})
+  return res.status(501).send()
 })
 
 /**
  * Called as the first step of `conan install`.
  */
-app.get('/:api/conans/:pkg/:version/:host/:owner/download_urls', (req, res) => {
-  const pkg = req.params.pkg
-  const version = req.params.version
+app.get('/:api/conans/:package/:version/:host/:owner/download_urls', (req, res) => {
+  const repo = req.params.package
+  const tag = req.params.version
   const host = req.params.host
   const owner = req.params.owner
-  const ref = `${pkg}/${version}@${host}/${owner}`
+  const ref = `${repo}/${tag}@${host}/${owner}`
 
   if (host !== 'github') {
     return res.status(403).send(`Not a GitHub package: '${ref}'`)
@@ -188,24 +188,40 @@ app.get('/:api/conans/:pkg/:version/:host/:owner/download_urls', (req, res) => {
   const data = {}
   const files = ['conanmanifest.txt', 'conanfile.py', 'conan_export.tgz', 'conan_sources.tgz']
   for (const file of files) {
-    data[file] = `https://github.com/${owner}/${pkg}/releases/download/${version}/${file}`
+    data[file] = `https://github.com/${owner}/${repo}/releases/download/${tag}/${file}`
   }
   return res.send(data)
 })
 
-app.get('/:api/conans/:pkg/:version/:host/:owner/packages/:pid/download_urls', (req, res) => {
+app.get('/:api/conans/:package/:version/:host/:owner/packages/:binaryId/download_urls', (req, res) => {
+  // TODO: Implement binary uploads.
   return res.status(404).send()
+})
+
+/**
+ * Called during `conan install`.
+ */
+app.get('/:api/conans/:package/:version/:host/:owner/revisions/:revision/packages/:binaryId/latest', (req, res) => {
+  // TODO: Implement binary downloads.
+  return res.status(404).send()
+})
+
+/**
+ * Called during `conan install`.
+ */
+app.get('/:api/conans/:package/:version/:host/:owner/latest', (req, res) => {
+  return res.send({revision: '0', time: new Date().toISOString()})
 })
 
 /**
  * Called during `conan upload`.
  */
-app.put('/:api/conans/:pkg/:version/:host/:owner/revisions/:revision/files/:file', async (req, res) => {
-  const pkg = req.params.pkg
-  const version = req.params.version
+app.put('/:api/conans/:package/:version/:host/:owner/revisions/:revision/files/:file', async (req, res) => {
+  const repo = req.params.package
+  const tag = req.params.version
   const host = req.params.host
   const owner = req.params.owner
-  const ref = `${pkg}/${version}@${host}/${owner}`
+  const ref = `${repo}/${tag}@${host}/${owner}`
 
   if (host !== 'github') {
     return res.status(403).send(`Not a GitHub package: '${ref}'`)
@@ -216,14 +232,14 @@ app.put('/:api/conans/:pkg/:version/:host/:owner/revisions/:revision/files/:file
 
   let response = await octokit.rest.repos.getReleaseByTag({
     owner,
-    repo: pkg,
-    tag: version,
+    repo,
+    tag,
   })
   if (response.status !== 200) {
     response = await octokit.rest.repos.getReleaseByTag({
       owner,
-      repo: pkg,
-      tag_name: `v${version}`,
+      repo,
+      tag_name: `v${tag}`,
     })
   }
   if (response.status !== 200) {
@@ -249,7 +265,7 @@ app.put('/:api/conans/:pkg/:version/:host/:owner/revisions/:revision/files/:file
   response = await octokit.rest.repos.uploadReleaseAsset({
     origin,
     owner,
-    repo: pkg,
+    repo,
     release_id,
     name: req.params.file,
     data,
@@ -264,15 +280,15 @@ app.put('/:api/conans/:pkg/:version/:host/:owner/revisions/:revision/files/:file
 /**
  * Called during `conan remove`.
  */
-app.get('/:api/conans/:pkg/:version/:host/:owner/revisions', (req, res) => {
-  const pkg = req.params.pkg
-  const version = req.params.version
+app.get('/:api/conans/:package/:version/:host/:owner/revisions', (req, res) => {
+  const repo = req.params.package
+  const tag = req.params.version
   const host = req.params.host
   const owner = req.params.owner
-  const ref = `${pkg}/${version}@${host}/${owner}`
+  const ref = `${repo}/${tag}@${host}/${owner}`
 
   if (host !== 'github') {
-    return res.status(403).send(`Not a GitHub pkg: '${ref}'`)
+    return res.status(403).send(`Not a GitHub package: '${ref}'`)
   }
 
   return res.send({revisions: [{revision: '0', time: new Date().toISOString()}]})
@@ -281,15 +297,15 @@ app.get('/:api/conans/:pkg/:version/:host/:owner/revisions', (req, res) => {
 /**
  * Called during `conan remove`.
  */
-app.delete('/:api/conans/:pkg/:version/:host/:owner/revisions/:revision', async (req, res) => {
-  const pkg = req.params.pkg
-  const version = req.params.version
+app.delete('/:api/conans/:package/:version/:host/:owner/revisions/:revision', async (req, res) => {
+  const repo = req.params.package
+  const tag = req.params.version
   const host = req.params.host
   const owner = req.params.owner
-  const ref = `${pkg}/${version}@${host}/${owner}`
+  const ref = `${repo}/${tag}@${host}/${owner}`
 
   if (host !== 'github') {
-    return res.status(403).send(`Not a GitHub pkg: '${ref}'`)
+    return res.status(403).send(`Not a GitHub package: '${ref}'`)
   }
 
   const { user, auth } = bearer(req)
@@ -297,8 +313,8 @@ app.delete('/:api/conans/:pkg/:version/:host/:owner/revisions/:revision', async 
 
   let response = await octokit.rest.repos.getReleaseByTag({
     owner,
-    repo: pkg,
-    tag: version
+    repo,
+    tag
   })
   if (response.status !== 200) {
     return res.status(403).send(`Cannot find release: '${ref}'`)
@@ -307,7 +323,7 @@ app.delete('/:api/conans/:pkg/:version/:host/:owner/revisions/:revision', async 
   for (const asset of response.data.assets) {
     await octokit.rest.repos.deleteReleaseAsset({
       owner,
-      repo: pkg,
+      repo,
       asset_id: asset.id
     })
   }
