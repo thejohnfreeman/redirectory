@@ -1,5 +1,4 @@
 import express from 'express'
-import fetch from 'node-fetch'
 import path from 'path'
 import { newOctokit } from './octokit.js'
 
@@ -268,6 +267,7 @@ router.put('/:api/conans/:package/:version/:host/:owner/revisions/:revision/file
       'Content-Length': req.get('Content-Length'),
       'X-GitHub-Api-Version': '2022-11-28',
     },
+    duplex: 'half',
     body: req,
   })
   if (response.status !== 200) {
