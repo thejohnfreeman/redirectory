@@ -1,6 +1,14 @@
 import express from 'express'
 import getRawBody from 'raw-body'
+import fetch from 'node-fetch'
+import path from 'path'
 import { newOctokit } from './octokit.js'
+
+const MIME_TYPES = {
+  '.txt': 'text/plain',
+  '.py': 'text/x-python',
+  '.tgz': 'application/gzip',
+}
 
 const port = 9494
 
@@ -88,7 +96,7 @@ app.get('/:api/users/authenticate', (req, res) => {
  * If it returns 404, then Conan proceeds to call `check_credentials` and then
  * `files`.
  */
-app.get('/:api/conans/:package/:version/:host/:owner/revisions/:revision/files/:file', (req, res) => {
+app.get('/:api/conans/:package/:version/:host/:owner/revisions/:revision/files/:filename', (req, res) => {
   const repo = req.params.package
   const tag = req.params.version
   const host = req.params.host
@@ -99,8 +107,8 @@ app.get('/:api/conans/:package/:version/:host/:owner/revisions/:revision/files/:
     return res.status(403).send(`Not a GitHub package: '${ref}'`)
   }
 
-  const file = req.params.file
-  return res.redirect(301, `https://github.com/${owner}/${repo}/releases/download/${tag}/${file}`)
+  const filename = req.params.filename
+  return res.redirect(301, `https://github.com/${owner}/${repo}/releases/download/${tag}/${filename}`)
 })
 
 /**
@@ -188,9 +196,9 @@ app.get('/:api/conans/:package/:version/:host/:owner/download_urls', (req, res) 
   }
 
   const data = {}
-  const files = ['conanmanifest.txt', 'conanfile.py', 'conan_export.tgz', 'conan_sources.tgz']
-  for (const file of files) {
-    data[file] = `https://github.com/${owner}/${repo}/releases/download/${tag}/${file}`
+  const filenames = ['conanmanifest.txt', 'conanfile.py', 'conan_export.tgz', 'conan_sources.tgz']
+  for (const filename of filenames) {
+    data[filename] = `https://github.com/${owner}/${repo}/releases/download/${tag}/${filename}`
   }
   return res.send(data)
 })
@@ -218,7 +226,7 @@ app.get('/:api/conans/:package/:version/:host/:owner/latest', (req, res) => {
 /**
  * Called during `conan upload`.
  */
-app.put('/:api/conans/:package/:version/:host/:owner/revisions/:revision/files/:file', async (req, res) => {
+app.put('/:api/conans/:package/:version/:host/:owner/revisions/:revision/files/:filename', async (req, res) => {
   const repo = req.params.package
   const tag = req.params.version
   const host = req.params.host
@@ -250,30 +258,20 @@ app.put('/:api/conans/:package/:version/:host/:owner/revisions/:revision/files/:
   const release_id = response.data.id
   const origin = new URL(response.data.upload_url).origin
 
-  let data
-  try {
-    data = await getRawBody(req)
-  } catch (error) {
-    return res.status(400).send('Incomplete asset')
-  }
-  const header = req.get('Content-Length')
-  if (!header) {
-    return res.status(400).send('Missing header: Content-Length')
-  }
-  const length = parseInt(header)
-  if (Number.isNaN(length)) {
-    return res.status(400).send('Malformed header: Content-Length')
-  }
-  if (data.length !== length) {
-    return res.status(400).send(`Content length does not match header: ${data.length} != ${length}`)
-  }
+  const filename = req.params.filename
+  const extension = path.extname(filename)
+  const mimeType = MIME_TYPES[extension] || 'application/octet-stream'
 
-  // TODO: Stream contents.
-  response = await octokit.request(`POST ${origin}/repos/${owner}/${repo}/releases/${release_id}/assets?name=${req.params.file}`, {
-    data,
+  response = await fetch(`${origin}/repos/${owner}/${repo}/releases/${release_id}/assets?name=${filename}`, {
+    method: 'POST',
     headers: {
-      'X-GitHub-Api-Version': '2022-11-28'
+      'Accept': 'application/vnd.github+json',
+      'Authorization': `Bearer ${auth}`,
+      'Content-Type': mimeType,
+      'Content-Length': req.get('Content-Length'),
+      'X-GitHub-Api-Version': '2022-11-28',
     },
+    body: req,
   })
   if (response.status !== 200) {
     return res.status(response.status).send()
