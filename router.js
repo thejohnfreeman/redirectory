@@ -16,8 +16,8 @@ function unbase64(input) {
 
 class HttpError {
   constructor(code, message) {
-    self.code = code
-    self.message = message
+    this.code = code
+    this.message = message
   }
 }
 
@@ -33,8 +33,6 @@ function httpErrorHandler(err, req, res, next) {
   }
   next(err)
 }
-
-router.use(httpErrorHandler)
 
 function bearer(req) {
   const header = req.get('Authorization')
@@ -245,7 +243,7 @@ router.put('/:api/conans/:package/:version/:host/:owner/revisions/:revision/file
     response = await octokit.rest.repos.getReleaseByTag({
       owner,
       repo,
-      tag_name: `v${tag}`,
+      tag: `v${tag}`,
     })
   }
   if (response.status !== 200) {
@@ -335,5 +333,7 @@ router.all('*', (req, res) => {
   console.log(req.method, req.originalUrl)
   res.status(501).send()
 })
+
+router.use(httpErrorHandler)
 
 export default router
