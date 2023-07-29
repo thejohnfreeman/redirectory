@@ -161,12 +161,37 @@ router.get('/:api/conans/:package/:version/:host/:owner/revisions/:revision/file
 })
 
 /** This may be impossible to implement. */
-router.get('/:api/conans/search', (req, res) => {
+router.get('/:api/conans/search', async (req, res) => {
   const query = req.query.q
-  // TODO: Let projects tag themselves #redirectory.
-  // Search among tagged projects for package names,
-  // then collect their releases.
-  return res.status(501).send()
+  // TODO: Split name from version. For now, assume just name.
+
+  const results = []
+
+  const { user, auth } = bearer(req)
+  const octokit = newOctokit({ auth })
+  const response = await octokit.rest.search.repos({
+    q: `${query} in:name topic:redirectory`,
+    sort: 'stars',
+    order: 'desc',
+  })
+  if (response.status !== 200) {
+    return res.send({ results })
+  }
+
+  for (const result of response.data.items) {
+    const owner = result.owner.login
+    const repo = result.name
+    const response = await octokit.rest.repos.listReleases({ owner, repo })
+    if (response.status !== 200) {
+      continue
+    }
+    for (const release of response.data) {
+      const tag = release.tag_name
+      results.push(`${repo}/${tag}@github/${owner}`)
+    }
+  }
+
+  return res.send({ results })
 })
 
 /**
