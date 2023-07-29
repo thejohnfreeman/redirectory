@@ -1,6 +1,6 @@
 # Redirectory
 
-An Artifactory impostor for Conan that redirects to GitHub.
+> An Artifactory impostor for Conan that redirects to GitHub.
 
 I run a public Redirectory that you can use to install (and publish) packages
 stored as [releases][] on GitHub.
@@ -10,16 +10,7 @@ You can run your own server if you want.
 [releases]: https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases
 
 
-## Consuming
-
-All package references are of the form `${package}/${version}@github/${owner}`
-where `package` matches the name of a repository on GitHub, `version` is a tag
-in that repository, and `owner` is the owner of that repository.
-
-
-## Publishing
-
-### Configuration
+## Configuration
 
 First, add the Redirectory server you want to publish through.
 If you want to use my server, it is `https://conan.jfreeman.dev`.
@@ -48,7 +39,14 @@ conan user --remote redirectory ${owner} --password ${token}
 [2]: https://github.com/settings/tokens?type=beta
 
 
-### Publishing
+## Consuming
+
+All package references are of the form `${package}/${version}@github/${owner}`
+where `package` matches the name of a repository on GitHub, `version` is a tag
+in that repository, and `owner` is the owner of that repository.
+
+
+## Publishing
 
 Redirectory requires an existing release to attach assets. It will not create
 a release for you, because that requires choosing a commit to tag.
@@ -63,3 +61,8 @@ doesn't exist. Everything else can be left defaulted.
 conan export . github/${owner}
 conan upload --remote redirectory ${package}/${version}@github/${owner}
 ```
+
+If you want your package to be discoverable through `conan search`, you'll
+need to add `redirectory` as a [topic][] on your repository.
+
+[topic]: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/classifying-your-repository-with-topics
