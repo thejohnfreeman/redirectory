@@ -39,14 +39,20 @@ conan user --remote redirectory ${owner} --password ${token}
 [2]: https://github.com/settings/tokens?type=beta
 
 
-## Consuming
+## Consume
 
 All package references are of the form `${package}/${version}@github/${owner}`
 where `package` matches the name of a repository on GitHub, `version` is a tag
 in that repository, and `owner` is the owner of that repository.
 
+You can search for available package versions:
 
-## Publishing
+```
+conan search --remote redirectory ${package}
+```
+
+
+## Publish
 
 Redirectory requires an existing release to attach assets. It will not create
 a release for you, because that requires choosing a commit to tag.
