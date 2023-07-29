@@ -19,7 +19,7 @@ If you want to use my server, it is `https://conan.jfreeman.dev`.
 conan remote add redirectory ${url}
 ```
 
-To publish, you need to authenticate to the server using a [GitHub Personal
+Second, you must authenticate to the server using a [GitHub Personal
 Access Token (PAT)][1]. The server won't actually store this token[^1]. It
 just echoes the token back to your Conan client, which stores it in your local
 cache and includes it with every authenticated request it makes to the server.
