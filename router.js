@@ -90,15 +90,35 @@ router.get('/:api/users/authenticate', (req, res) => {
  * If it returns 404, then Conan proceeds to call `check_credentials` and then
  * `files`.
  */
-router.get('/:api/conans/:package/:version/:host/:owner/revisions/:revision/files/:filename', (req, res) => {
+router.get('/:api/conans/:package/:version/:host/:owner/revisions/:revision/files/:filename', async (req, res) => {
   const repo = req.params.package
-  const tag = req.params.version
+  let tag = req.params.version
   const host = req.params.host
   const owner = req.params.owner
   const ref = `${repo}/${tag}@${host}/${owner}`
 
   if (host !== 'github') {
     return res.status(403).send(`Not a GitHub package: '${ref}'`)
+  }
+
+  const { user, auth } = bearer(req)
+  const octokit = newOctokit({ auth })
+
+  let response = await octokit.rest.repos.getReleaseByTag({
+    owner,
+    repo,
+    tag,
+  })
+  if (response.status !== 200) {
+    tag = `v${tag}`
+    response = await octokit.rest.repos.getReleaseByTag({
+      owner,
+      repo,
+      tag,
+    })
+  }
+  if (response.status !== 200) {
+    return res.status(404).send(`Package not found: '${ref}'`)
   }
 
   const filename = req.params.filename
@@ -133,7 +153,7 @@ router.get('/:api/users/check_credentials', async (req, res) => {
  */
 router.get('/:api/conans/:package/:version/:host/:owner/revisions/:revision/files', async (req, res) => {
   const repo = req.params.package
-  const tag = req.params.version
+  let tag = req.params.version
   const host = req.params.host
   const owner = req.params.owner
   const ref = `${repo}/${tag}@${host}/${owner}`
@@ -144,11 +164,20 @@ router.get('/:api/conans/:package/:version/:host/:owner/revisions/:revision/file
 
   const { user, auth } = bearer(req)
   const octokit = newOctokit({ auth })
-  const response = await octokit.rest.repos.getReleaseByTag({
+
+  let response = await octokit.rest.repos.getReleaseByTag({
     owner,
     repo,
-    tag
+    tag,
   })
+  if (response.status !== 200) {
+    tag = `v${tag}`
+    response = await octokit.rest.repos.getReleaseByTag({
+      owner,
+      repo,
+      tag,
+    })
+  }
   if (response.status !== 200) {
     return res.status(404).send(`Recipe not found: ${ref}`)
   }
@@ -197,9 +226,9 @@ router.get('/:api/conans/search', async (req, res) => {
 /**
  * Called as the first step of `conan install`.
  */
-router.get('/:api/conans/:package/:version/:host/:owner/download_urls', (req, res) => {
+router.get('/:api/conans/:package/:version/:host/:owner/download_urls', async (req, res) => {
   const repo = req.params.package
-  const tag = req.params.version
+  let tag = req.params.version
   const host = req.params.host
   const owner = req.params.owner
   const ref = `${repo}/${tag}@${host}/${owner}`
@@ -208,9 +237,24 @@ router.get('/:api/conans/:package/:version/:host/:owner/download_urls', (req, re
     return res.status(403).send(`Not a GitHub package: '${ref}'`)
   }
 
-  // TODO: Check if the release exists.
-  const found = true
-  if (!found) {
+  const { user, auth } = bearer(req)
+  const octokit = newOctokit({ auth })
+
+  // TODO: Factor out release search.
+  let response = await octokit.rest.repos.getReleaseByTag({
+    owner,
+    repo,
+    tag,
+  })
+  if (response.status !== 200) {
+    tag = `v${tag}`
+    response = await octokit.rest.repos.getReleaseByTag({
+      owner,
+      repo,
+      tag,
+    })
+  }
+  if (response.status !== 200) {
     return res.status(404).send(`Recipe not found: '${ref}'`)
   }
 
@@ -247,7 +291,7 @@ router.get('/:api/conans/:package/:version/:host/:owner/latest', (req, res) => {
  */
 router.put('/:api/conans/:package/:version/:host/:owner/revisions/:revision/files/:filename', async (req, res) => {
   const repo = req.params.package
-  const tag = req.params.version
+  let tag = req.params.version
   const host = req.params.host
   const owner = req.params.owner
   const ref = `${repo}/${tag}@${host}/${owner}`
@@ -265,15 +309,17 @@ router.put('/:api/conans/:package/:version/:host/:owner/revisions/:revision/file
     tag,
   })
   if (response.status !== 200) {
+    tag = `v${tag}`
     response = await octokit.rest.repos.getReleaseByTag({
       owner,
       repo,
-      tag: `v${tag}`,
+      tag,
     })
   }
   if (response.status !== 200) {
-    return res.status(403).send(`Cannot find release: '${ref}'`)
+    return res.status(422).send(`Package not found: '${ref}'`)
   }
+
   const release_id = response.data.id
   const origin = new URL(response.data.upload_url).origin
 
@@ -322,7 +368,7 @@ router.get('/:api/conans/:package/:version/:host/:owner/revisions', (req, res) =
  */
 router.delete('/:api/conans/:package/:version/:host/:owner/revisions/:revision', async (req, res) => {
   const repo = req.params.package
-  const tag = req.params.version
+  let tag = req.params.version
   const host = req.params.host
   const owner = req.params.owner
   const ref = `${repo}/${tag}@${host}/${owner}`
@@ -337,10 +383,18 @@ router.delete('/:api/conans/:package/:version/:host/:owner/revisions/:revision',
   let response = await octokit.rest.repos.getReleaseByTag({
     owner,
     repo,
-    tag
+    tag,
   })
   if (response.status !== 200) {
-    return res.status(403).send(`Cannot find release: '${ref}'`)
+    tag = `v${tag}`
+    response = await octokit.rest.repos.getReleaseByTag({
+      owner,
+      repo,
+      tag,
+    })
+  }
+  if (response.status !== 200) {
+    return res.status(404).send(`Package not found: '${ref}'`)
   }
 
   for (const asset of response.data.assets) {

@@ -8,7 +8,6 @@ const traps = {
     try {
       return await Reflect.apply(target, self, args)
     } catch (error) {
-      console.error(error)
       return error.response
     }
   }
