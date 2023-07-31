@@ -25,3 +25,8 @@ for reference in ${references}; do
   command="conan install ${nv}@${uc} -r ${remote} --build missing"
   ${command} || (sleep 90 && ${command})
 done
+
+results=$(conan search -r ${remote} cupcake)
+[[ "${results}" =~ "cupcake/v0.2.0@github/thejohnfreeman" ]] || (echo "missing!")
+
+echo "passed"
