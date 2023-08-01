@@ -100,13 +100,6 @@ router.get('/:api/users/authenticate', (req, res) => {
   res.type('text/plain').send(match[1])
 })
 
-router.get('/:api/conans/:package/:version/:host/:owner/revisions/:revision/files/:filename', async (req, res) => {
-  const { repo, tag, owner } = parseRelease(req)
-  const filename = req.params.filename
-
-  return res.redirect(301, `https://github.com/${owner}/${repo}/releases/download/${tag}/${filename}`)
-})
-
 router.get('/:api/users/check_credentials', async (req, res) => {
   const { user, auth } = parseBearer(req)
   const client = req.get('X-Client-Id')
@@ -125,61 +118,12 @@ router.get('/:api/users/check_credentials', async (req, res) => {
   return res.send(user)
 })
 
-router.get('/:api/conans/:package/:version/:host/:owner/revisions/:revision/files', async (req, res) => {
-  const { repo, tag, owner, reference } = parseRelease(req)
-
-  const { user, auth } = parseBearer(req)
-  const octokit = newOctokit({ auth })
-
-  const response = await octokit.rest.repos.getReleaseByTag({
-    owner,
-    repo,
-    tag,
-  })
-  if (response.status !== 200) {
-    return res.status(404).send(`Recipe not found: ${reference}`)
-  }
-
-  const files = {}
-  for (const asset of response.data.assets) {
-    files[asset.name] = {}
-  }
-  return res.send({ files })
+router.get('/:api/conans/:package/:version/:host/:owner/latest', (req, res) => {
+  return res.send({revision: '0', time: new Date().toISOString()})
 })
 
-/** This may be impossible to implement. */
-router.get('/:api/conans/search', async (req, res) => {
-  const query = req.query.q
-  // TODO: Split name from version. For now, assume just name.
-
-  const results = []
-
-  const { user, auth } = parseBearer(req)
-  const octokit = newOctokit({ auth })
-  const response = await octokit.rest.search.repos({
-    q: `${query} in:name topic:redirectory`,
-    sort: 'stars',
-    order: 'desc',
-  })
-  if (response.status !== 200) {
-    return res.send({ results })
-  }
-
-  for (const result of response.data.items) {
-    const owner = result.owner.login
-    const repo = result.name
-    const response = await octokit.rest.repos.listReleases({ owner, repo })
-    if (response.status !== 200) {
-      continue
-    }
-    for (const release of response.data) {
-      const tag = release.tag_name
-      // TODO: Good way to translate backwards from release to reference?
-      results.push(`${repo}/${tag}@github/${owner}`)
-    }
-  }
-
-  return res.send({ results })
+router.get('/:api/conans/:package/:version/:host/:owner/revisions', (req, res) => {
+  return res.send({revisions: [{revision: '0', time: new Date().toISOString()}]})
 })
 
 router.get('/:api/conans/:package/:version/:host/:owner/download_urls', async (req, res) => {
@@ -211,13 +155,60 @@ router.get('/:api/conans/:package/:version/:host/:owner/packages/:binaryId/downl
   return res.status(404).send()
 })
 
-router.get('/:api/conans/:package/:version/:host/:owner/revisions/:revision/packages/:binaryId/latest', (req, res) => {
-  // TODO: Implement binary downloads.
-  return res.status(404).send()
+router.delete('/:api/conans/:package/:version/:host/:owner/revisions/:revision', async (req, res) => {
+  const { repo, tag, owner, reference } = parseRelease(req)
+
+  const { user, auth } = parseBearer(req)
+  const octokit = newOctokit({ auth })
+
+  let response = await octokit.rest.repos.getReleaseByTag({
+    owner,
+    repo,
+    tag,
+  })
+  if (response.status !== 200) {
+    return res.status(404).send(`Package not found: '${reference}'`)
+  }
+
+  for (const asset of response.data.assets) {
+    await octokit.rest.repos.deleteReleaseAsset({
+      owner,
+      repo,
+      asset_id: asset.id
+    })
+    // TODO: Handle errors.
+  }
+
+  return res.send()
 })
 
-router.get('/:api/conans/:package/:version/:host/:owner/latest', (req, res) => {
-  return res.send({revision: '0', time: new Date().toISOString()})
+router.get('/:api/conans/:package/:version/:host/:owner/revisions/:revision/files', async (req, res) => {
+  const { repo, tag, owner, reference } = parseRelease(req)
+
+  const { user, auth } = parseBearer(req)
+  const octokit = newOctokit({ auth })
+
+  const response = await octokit.rest.repos.getReleaseByTag({
+    owner,
+    repo,
+    tag,
+  })
+  if (response.status !== 200) {
+    return res.status(404).send(`Recipe not found: ${reference}`)
+  }
+
+  const files = {}
+  for (const asset of response.data.assets) {
+    files[asset.name] = {}
+  }
+  return res.send({ files })
+})
+
+router.get('/:api/conans/:package/:version/:host/:owner/revisions/:revision/files/:filename', async (req, res) => {
+  const { repo, tag, owner } = parseRelease(req)
+  const filename = req.params.filename
+
+  return res.redirect(301, `https://github.com/${owner}/${repo}/releases/download/${tag}/${filename}`)
 })
 
 router.put('/:api/conans/:package/:version/:host/:owner/revisions/:revision/files/:filename', async (req, res) => {
@@ -257,35 +248,44 @@ router.put('/:api/conans/:package/:version/:host/:owner/revisions/:revision/file
   return res.status(response.status).send()
 })
 
-router.get('/:api/conans/:package/:version/:host/:owner/revisions', (req, res) => {
-  return res.send({revisions: [{revision: '0', time: new Date().toISOString()}]})
+router.get('/:api/conans/:package/:version/:host/:owner/revisions/:revision/packages/:binaryId/latest', (req, res) => {
+  // TODO: Implement binary downloads.
+  return res.status(404).send()
 })
 
-router.delete('/:api/conans/:package/:version/:host/:owner/revisions/:revision', async (req, res) => {
-  const { repo, tag, owner, reference } = parseRelease(req)
+/** This may be impossible to implement. */
+router.get('/:api/conans/search', async (req, res) => {
+  const query = req.query.q
+  // TODO: Split name from version. For now, assume just name.
+
+  const results = []
 
   const { user, auth } = parseBearer(req)
   const octokit = newOctokit({ auth })
-
-  let response = await octokit.rest.repos.getReleaseByTag({
-    owner,
-    repo,
-    tag,
+  const response = await octokit.rest.search.repos({
+    q: `${query} in:name topic:redirectory`,
+    sort: 'stars',
+    order: 'desc',
   })
   if (response.status !== 200) {
-    return res.status(404).send(`Package not found: '${reference}'`)
+    return res.send({ results })
   }
 
-  for (const asset of response.data.assets) {
-    await octokit.rest.repos.deleteReleaseAsset({
-      owner,
-      repo,
-      asset_id: asset.id
-    })
-    // TODO: Handle errors.
+  for (const result of response.data.items) {
+    const owner = result.owner.login
+    const repo = result.name
+    const response = await octokit.rest.repos.listReleases({ owner, repo })
+    if (response.status !== 200) {
+      continue
+    }
+    for (const release of response.data) {
+      const tag = release.tag_name
+      // TODO: Good way to translate backwards from release to reference?
+      results.push(`${repo}/${tag}@github/${owner}`)
+    }
   }
 
-  return res.send()
+  return res.send({ results })
 })
 
 router.all('*', (req, res) => {
