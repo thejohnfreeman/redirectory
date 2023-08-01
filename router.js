@@ -83,8 +83,6 @@ function parseRelease(req) {
 }
 
 /**
- * Called during `conan user`.
- *
  * Return the Basic token right back to the Conan client.
  * Conan will pass whatever is returned as the Bearer token on future
  * requests.
@@ -102,17 +100,6 @@ router.get('/:api/users/authenticate', (req, res) => {
   res.type('text/plain').send(match[1])
 })
 
-/**
- * Redirect to GitHub.
- *
- * Called during `conan install`.
- * Artifactory returns URLs of this form in the response to a `download_urls`
- * request, but we can just return GitHub URLs directly.
- *
- * Called during `conan upload` for `conanmanifest.txt`.
- * If it returns 404, then Conan proceeds to call `check_credentials` and then
- * `files`.
- */
 router.get('/:api/conans/:package/:version/:host/:owner/revisions/:revision/files/:filename', async (req, res) => {
   const { repo, tag, owner } = parseRelease(req)
   const filename = req.params.filename
@@ -120,9 +107,6 @@ router.get('/:api/conans/:package/:version/:host/:owner/revisions/:revision/file
   return res.redirect(301, `https://github.com/${owner}/${repo}/releases/download/${tag}/${filename}`)
 })
 
-/**
- * Called during `conan upload`.
- */
 router.get('/:api/users/check_credentials', async (req, res) => {
   const { user, auth } = parseBearer(req)
   const client = req.get('X-Client-Id')
@@ -141,11 +125,6 @@ router.get('/:api/users/check_credentials', async (req, res) => {
   return res.send(user)
 })
 
-/**
- * Called during `conan upload`.
- * If it returns 404, then Conan uploads assets.
- * If it returns 200, then the package exists.
- */
 router.get('/:api/conans/:package/:version/:host/:owner/revisions/:revision/files', async (req, res) => {
   const { repo, tag, owner, reference } = parseRelease(req)
 
@@ -203,9 +182,6 @@ router.get('/:api/conans/search', async (req, res) => {
   return res.send({ results })
 })
 
-/**
- * Called as the first step of `conan install`.
- */
 router.get('/:api/conans/:package/:version/:host/:owner/download_urls', async (req, res) => {
   const { repo, tag, owner, reference } = parseRelease(req)
 
@@ -235,24 +211,15 @@ router.get('/:api/conans/:package/:version/:host/:owner/packages/:binaryId/downl
   return res.status(404).send()
 })
 
-/**
- * Called during `conan install`.
- */
 router.get('/:api/conans/:package/:version/:host/:owner/revisions/:revision/packages/:binaryId/latest', (req, res) => {
   // TODO: Implement binary downloads.
   return res.status(404).send()
 })
 
-/**
- * Called during `conan install`.
- */
 router.get('/:api/conans/:package/:version/:host/:owner/latest', (req, res) => {
   return res.send({revision: '0', time: new Date().toISOString()})
 })
 
-/**
- * Called during `conan upload`.
- */
 router.put('/:api/conans/:package/:version/:host/:owner/revisions/:revision/files/:filename', async (req, res) => {
   const { repo, tag, owner, reference } = parseRelease(req)
 
@@ -290,16 +257,10 @@ router.put('/:api/conans/:package/:version/:host/:owner/revisions/:revision/file
   return res.status(response.status).send()
 })
 
-/**
- * Called during `conan remove`.
- */
 router.get('/:api/conans/:package/:version/:host/:owner/revisions', (req, res) => {
   return res.send({revisions: [{revision: '0', time: new Date().toISOString()}]})
 })
 
-/**
- * Called during `conan remove`.
- */
 router.delete('/:api/conans/:package/:version/:host/:owner/revisions/:revision', async (req, res) => {
   const { repo, tag, owner, reference } = parseRelease(req)
 
