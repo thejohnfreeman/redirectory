@@ -40,7 +40,7 @@ function httpErrorHandler(err, req, res, next) {
   next(err)
 }
 
-function bearer(req) {
+function parseBearer(req) {
   const header = req.get('Authorization')
   if (!header) {
     throw new BadRequest('Missing header: Authorization')
@@ -124,7 +124,7 @@ router.get('/:api/conans/:package/:version/:host/:owner/revisions/:revision/file
  * Called during `conan upload`.
  */
 router.get('/:api/users/check_credentials', async (req, res) => {
-  const { user, auth } = bearer(req)
+  const { user, auth } = parseBearer(req)
   const client = req.get('X-Client-Id')
   if (user !== client) {
     console.warn(`Bearer token (${user}) does not match X-Client-Id (${client})`)
@@ -149,7 +149,7 @@ router.get('/:api/users/check_credentials', async (req, res) => {
 router.get('/:api/conans/:package/:version/:host/:owner/revisions/:revision/files', async (req, res) => {
   const { repo, tag, owner, reference } = parseRelease(req)
 
-  const { user, auth } = bearer(req)
+  const { user, auth } = parseBearer(req)
   const octokit = newOctokit({ auth })
 
   const response = await octokit.rest.repos.getReleaseByTag({
@@ -175,7 +175,7 @@ router.get('/:api/conans/search', async (req, res) => {
 
   const results = []
 
-  const { user, auth } = bearer(req)
+  const { user, auth } = parseBearer(req)
   const octokit = newOctokit({ auth })
   const response = await octokit.rest.search.repos({
     q: `${query} in:name topic:redirectory`,
@@ -209,7 +209,7 @@ router.get('/:api/conans/search', async (req, res) => {
 router.get('/:api/conans/:package/:version/:host/:owner/download_urls', async (req, res) => {
   const { repo, tag, owner, reference } = parseRelease(req)
 
-  const { user, auth } = bearer(req)
+  const { user, auth } = parseBearer(req)
   const octokit = newOctokit({ auth })
 
   // TODO: Factor out release search.
@@ -256,7 +256,7 @@ router.get('/:api/conans/:package/:version/:host/:owner/latest', (req, res) => {
 router.put('/:api/conans/:package/:version/:host/:owner/revisions/:revision/files/:filename', async (req, res) => {
   const { repo, tag, owner, reference } = parseRelease(req)
 
-  const { user, auth } = bearer(req)
+  const { user, auth } = parseBearer(req)
   const octokit = newOctokit({ auth })
 
   let response = await octokit.rest.repos.getReleaseByTag({
@@ -303,7 +303,7 @@ router.get('/:api/conans/:package/:version/:host/:owner/revisions', (req, res) =
 router.delete('/:api/conans/:package/:version/:host/:owner/revisions/:revision', async (req, res) => {
   const { repo, tag, owner, reference } = parseRelease(req)
 
-  const { user, auth } = bearer(req)
+  const { user, auth } = parseBearer(req)
   const octokit = newOctokit({ auth })
 
   let response = await octokit.rest.repos.getReleaseByTag({
