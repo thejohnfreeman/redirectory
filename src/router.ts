@@ -15,20 +15,17 @@ function unbase64(input) {
 }
 
 class HttpError {
-  constructor(code, message) {
-    this.code = code
-    this.message = message
-  }
+  constructor(public code: number, public message: string) {}
 }
 
 class BadRequest extends HttpError {
-  constructor(message) {
+  constructor(message: string) {
     super(400, message)
   }
 }
 
 class Forbidden extends HttpError {
-  constructor(message) {
+  constructor(message: string) {
     super(403, message)
   }
 }
@@ -65,13 +62,15 @@ router.get('/v1/ping', (req, res) => {
     .send()
 })
 
-function parseRelease(req) {
+type Release = any
+
+function parseRelease(req): Release {
   const repo = req.params.package
-  const root = {}
-  root.tag = req.params.version
+  const root: any = {}
+  const version = req.params.version
   const host = req.params.host
   const owner = req.params.owner
-  root.reference = `${repo}/${tag}@${host}/${owner}`
+  root.reference = `${repo}/${version}@${host}/${owner}`
   let reference = root.reference
   let suffix = ''
   const rrev = req.params.rrev
@@ -95,7 +94,7 @@ function parseRelease(req) {
     throw new Forbidden(`Not a GitHub package: '${reference}'`)
   }
 
-  root.tag = match[1] + root.tag + match[2]
+  root.tag = match[1] + version + match[2]
   const tag = root.tag + suffix
 
   return { repo, tag, host, owner, rrev, reference, root }
@@ -269,7 +268,7 @@ router.put('/:api/conans/:package/:version/:host/:owner/revisions/:rrev/files/:f
     },
     duplex: 'half',
     body: req,
-  })
+  } as any)
   if (response.status !== 200) {
     return res.status(response.status).send()
   }
@@ -329,6 +328,7 @@ router.put('/:api/conans/:package/:version/:host/:owner/revisions/:rrev/packages
   const extension = path.extname(filename)
   const mimeType = MIME_TYPES[extension] || 'application/octet-stream'
 
+  // TODO: See if octokit.request works.
   response = await fetch(`${origin}/repos/${owner}/${repo}/releases/${release_id}/assets?name=${filename}`, {
     method: 'POST',
     headers: {
@@ -340,7 +340,7 @@ router.put('/:api/conans/:package/:version/:host/:owner/revisions/:rrev/packages
     },
     duplex: 'half',
     body: req,
-  })
+  } as any)
   if (response.status !== 200) {
     return res.status(response.status).send()
   }

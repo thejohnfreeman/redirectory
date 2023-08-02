@@ -1,0 +1,8 @@
+{
+  "include": ["src/**/*.ts"],
+  "compilerOptions": {
+    "module": "node16",
+    "types": ["node"],
+    "outDir": "dist"
+  }
+}

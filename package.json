@@ -5,7 +5,8 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "start": "node serve.js",
+    "start": "node dist/serve.js",
+    "build": "tsc",
     "test": "true"
   },
   "author": "John Freeman <jfreeman08@gmail.com>",
@@ -14,5 +15,9 @@
     "express": "^5.0.0-beta.1",
     "octokit": "^3.1.0",
     "serverless-http": "^3.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.4.6",
+    "typescript": "^5.1.6"
   }
 }
