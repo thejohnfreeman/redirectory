@@ -30,11 +30,23 @@ class Forbidden extends HttpError {
   }
 }
 
+class NotFound extends HttpError {
+  constructor(message: string) {
+    super(404, message)
+  }
+}
+
+class BadGateway extends HttpError {
+  constructor(message: string) {
+    super(502, message)
+  }
+}
+
 function httpErrorHandler(err, req, res, next) {
   if (err instanceof HttpError) {
     return res.status(err.code).send(err.message)
   }
-  next(err)
+  return res.status(500).send(err.message)
 }
 
 function parseBearer(req) {
@@ -56,15 +68,14 @@ function parseBearer(req) {
   return { user, auth }
 }
 
-router.get('/v1/ping', (req, res) => {
-  res
-    .set('X-Conan-Server-Capabilities', 'complex_search,revisions')
-    .send()
-})
+type ReleaseParameters = {
+  owner: string,
+  repo: string,
+  tag: string,
+  [key: string]: any,
+}
 
-type Release = any
-
-function parseRelease(req): Release {
+function parseRelease(req): ReleaseParameters {
   const repo = req.params.package
   const root: any = {}
   const version = req.params.version
@@ -129,11 +140,75 @@ function getFile(req, res) {
   return res.redirect(301, `https://github.com/${owner}/${repo}/releases/download/${tag}/${filename}`)
 }
 
+function parseJsonPrefix(text: string) {
+  try {
+    return JSON.parse(text)
+  } catch (error) {
+    const match = error.message.match(/position\s+(\d+)/)
+    if (!match) {
+      throw error
+    }
+    text = text.substr(0, match[1])
+  }
+  return JSON.parse(text)
+}
+
+class ReferenceMetadata {
+  constructor(public params: ReleaseParameters, public json: object, private prefix: string, private suffix: string) {}
+}
+
+function getReferenceMetadata(octokit: Octokit, params: ReleaseParameters, force = False) {
+  let response = await octokit.rest.repos.getReleaseByTag({
+    owner: params.owner,
+    repo: params.repo,
+    tag: params.root.tag,
+  })
+
+  let json = {}
+  let prefix = ''
+  let suffix = ''
+
+  if (response.status !== 200) {
+    if (!force) {
+      throw new NotFound(`Recipe not found: '${reference}'`)
+    }
+    response = await octokit.rest.repos.createRelease({
+      owner,
+      repo,
+      tag_name: tag,
+    })
+
+  } else {
+    assert(typeof response.data.body === 'string')
+    let match = response.data.body.match(/(.*)<!--\s*redirectory\s*(.*?)\s*-->(.*)/)
+    if (match) {
+      prefix = match[1]
+      suffix = match[3]
+      let comment = match[2]
+      comment = comment.substring(comment.indexOf('{'))
+      try {
+        json = parseJsonPrefix(comment)
+      } catch (error) {
+        throw new BadGateway(`Bad metadata comment: ${params.root.reference}`)
+      }
+    }
+  }
+
+  return new ReferenceMetadata(params, json, prefix, suffix)
+}
+
+router.get('/v1/ping', (req, res) => {
+  res
+    .set('X-Conan-Server-Capabilities', 'complex_search,revisions')
+    .send()
+})
+
 /**
  * Return the Basic token right back to the Conan client.
- * Conan will pass whatever is returned as the Bearer token on future
- * requests.
- * That token is a base64 encoding of `user:ghtoken`.
+ * That token is a base64 encoding of `user:password`.
+ * Conan passes whatever is returned as a Bearer token on future requests.
+ * If users use their GitHub Personal Access Token as their password,
+ * then we'll have what we need.
  */
 router.get('/:api/users/authenticate', (req, res) => {
   const header = req.get('Authorization')
@@ -153,6 +228,9 @@ router.get('/:api/users/check_credentials', async (req, res) => {
   if (user !== client) {
     console.warn(`Bearer token (${user}) does not match X-Client-Id (${client})`)
   }
+  // This function is called many times.
+  // For now, we disable the call to GitHub to save on traffic costs.
+  /*
   const octokit = newOctokit({ auth })
   const response = await octokit.rest.users.getAuthenticated()
   if (response.status !== 200) {
@@ -162,6 +240,7 @@ router.get('/:api/users/check_credentials', async (req, res) => {
   if (login !== user) {
     console.warn(`Bearer token (${user}) does not match GitHub token (${login})`)
   }
+  */
   return res.send(user)
 })
 
