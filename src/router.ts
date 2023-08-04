@@ -1,6 +1,14 @@
+import { strict as assert } from 'node:assert'
 import express from 'express'
 import path from 'path'
+import { OctokitResponse } from '@octokit/types'
+import { Octokit } from 'octokit'
 import { newOctokit } from './octokit.js'
+
+// TODO: There is no built-in type for this?
+interface Object {
+  [property: string]: any
+}
 
 const MIME_TYPES = {
   '.txt': 'text/plain',
@@ -15,7 +23,10 @@ function unbase64(input) {
 }
 
 class HttpError {
-  constructor(public code: number, public message: string) {}
+  constructor(
+    public code: number,
+    public message: string,
+  ) {}
 }
 
 class BadRequest extends HttpError {
@@ -69,10 +80,10 @@ function parseBearer(req) {
 }
 
 type ReleaseParameters = {
-  owner: string,
-  repo: string,
-  tag: string,
-  [key: string]: any,
+  owner: string
+  repo: string
+  tag: string
+  [key: string]: any
 }
 
 function parseRelease(req): ReleaseParameters {
@@ -111,33 +122,38 @@ function parseRelease(req): ReleaseParameters {
   return { repo, tag, host, owner, rrev, reference, root }
 }
 
+/** Return a list of asset names for the requested release. */
 async function getFiles(req, res) {
   const { repo, tag, owner, reference } = parseRelease(req)
 
   const { user, auth } = parseBearer(req)
   const octokit = newOctokit({ auth })
 
-  const response = await octokit.rest.repos.getReleaseByTag({
+  const r1 = await octokit.rest.repos.getReleaseByTag({
     owner,
     repo,
     tag,
   })
-  if (response.status !== 200) {
+  if (r1.status !== 200) {
     return res.status(404).send(`Recipe not found: ${reference}`)
   }
 
   const files = {}
-  for (const asset of response.data.assets) {
+  for (const asset of r1.data.assets) {
     files[asset.name] = {}
   }
   return res.send({ files })
 }
 
+/** Return a redirect for the requested file. */
 function getFile(req, res) {
   const { repo, tag, owner } = parseRelease(req)
   const filename = req.params.filename
   // TODO: Do we need to look up the download URL or can we assume its form?
-  return res.redirect(301, `https://github.com/${owner}/${repo}/releases/download/${tag}/${filename}`)
+  return res.redirect(
+    301,
+    `https://github.com/${owner}/${repo}/releases/download/${tag}/${filename}`,
+  )
 }
 
 function parseJsonPrefix(text: string) {
@@ -154,11 +170,21 @@ function parseJsonPrefix(text: string) {
 }
 
 class ReferenceMetadata {
-  constructor(public params: ReleaseParameters, public json: object, private prefix: string, private suffix: string) {}
+  constructor(
+    private octokit: Octokit,
+    private params: ReleaseParameters,
+    public json: object,
+    private prefix: string,
+    private suffix: string,
+  ) {}
 }
 
-function getReferenceMetadata(octokit: Octokit, params: ReleaseParameters, force = False) {
-  let response = await octokit.rest.repos.getReleaseByTag({
+async function getReferenceMetadata(
+  octokit: Octokit,
+  params: ReleaseParameters,
+  force = false,
+): Promise<ReferenceMetadata> {
+  const oldRelease = await octokit.rest.repos.getReleaseByTag({
     owner: params.owner,
     repo: params.repo,
     tag: params.root.tag,
@@ -168,19 +194,23 @@ function getReferenceMetadata(octokit: Octokit, params: ReleaseParameters, force
   let prefix = ''
   let suffix = ''
 
-  if (response.status !== 200) {
+  if (oldRelease.status !== 200) {
     if (!force) {
-      throw new NotFound(`Recipe not found: '${reference}'`)
+      throw new NotFound(`Recipe not found: '${params.reference}'`)
     }
-    response = await octokit.rest.repos.createRelease({
-      owner,
-      repo,
-      tag_name: tag,
+    const newRelease = await octokit.rest.repos.createRelease({
+      owner: params.owner,
+      repo: params.repo,
+      tag_name: params.root.tag,
     })
-
+    if (newRelease.status !== 201) {
+      throw new HttpError(newRelease.status, newRelease.data.body)
+    }
   } else {
-    assert(typeof response.data.body === 'string')
-    let match = response.data.body.match(/(.*)<!--\s*redirectory\s*(.*?)\s*-->(.*)/)
+    assert(typeof oldRelease.data.body === 'string')
+    let match = oldRelease.data.body.match(
+      /(.*)<!--\s*redirectory\s*(.*?)\s*-->(.*)/,
+    )
     if (match) {
       prefix = match[1]
       suffix = match[3]
@@ -194,13 +224,11 @@ function getReferenceMetadata(octokit: Octokit, params: ReleaseParameters, force
     }
   }
 
-  return new ReferenceMetadata(params, json, prefix, suffix)
+  return new ReferenceMetadata(octokit, params, json, prefix, suffix)
 }
 
 router.get('/v1/ping', (req, res) => {
-  res
-    .set('X-Conan-Server-Capabilities', 'complex_search,revisions')
-    .send()
+  res.set('X-Conan-Server-Capabilities', 'complex_search,revisions').send()
 })
 
 /**
@@ -226,17 +254,19 @@ router.get('/:api/users/check_credentials', async (req, res) => {
   const { user, auth } = parseBearer(req)
   const client = req.get('X-Client-Id')
   if (user !== client) {
-    console.warn(`Bearer token (${user}) does not match X-Client-Id (${client})`)
+    console.warn(
+      `Bearer token (${user}) does not match X-Client-Id (${client})`,
+    )
   }
   // This function is called many times.
   // For now, we disable the call to GitHub to save on traffic costs.
   /*
   const octokit = newOctokit({ auth })
-  const response = await octokit.rest.users.getAuthenticated()
-  if (response.status !== 200) {
+  const r1 = await octokit.rest.users.getAuthenticated()
+  if (r1.status !== 200) {
     return res.status(401).send('Invalid GitHub token')
   }
-  const login = response.data.login
+  const login = r1.data.login
   if (login !== user) {
     console.warn(`Bearer token (${user}) does not match GitHub token (${login})`)
   }
@@ -245,189 +275,238 @@ router.get('/:api/users/check_credentials', async (req, res) => {
 })
 
 router.get('/:api/conans/:package/:version/:host/:owner/latest', (req, res) => {
-  return res.send({revision: '0', time: new Date().toISOString()})
+  return res.send({ revision: '0', time: new Date().toISOString() })
 })
 
-router.get('/:api/conans/:package/:version/:host/:owner/revisions', (req, res) => {
-  return res.send({revisions: [{revision: '0', time: new Date().toISOString()}]})
-})
+router.get(
+  '/:api/conans/:package/:version/:host/:owner/revisions',
+  (req, res) => {
+    return res.send({
+      revisions: [{ revision: '0', time: new Date().toISOString() }],
+    })
+  },
+)
 
-router.get('/:api/conans/:package/:version/:host/:owner/download_urls', async (req, res) => {
-  const { repo, tag, owner, reference } = parseRelease(req)
+router.get(
+  '/:api/conans/:package/:version/:host/:owner/download_urls',
+  async (req, res) => {
+    const { repo, tag, owner, reference } = parseRelease(req)
 
-  const { user, auth } = parseBearer(req)
-  const octokit = newOctokit({ auth })
+    const { user, auth } = parseBearer(req)
+    const octokit = newOctokit({ auth })
 
-  // TODO: Factor out release search.
-  let response = await octokit.rest.repos.getReleaseByTag({
-    owner,
-    repo,
-    tag,
-  })
-  if (response.status !== 200) {
-    return res.status(404).send(`Recipe not found: '${reference}'`)
-  }
-
-  const data = {}
-  const filenames = ['conanmanifest.txt', 'conanfile.py', 'conan_export.tgz', 'conan_sources.tgz']
-  for (const filename of filenames) {
-    data[filename] = `https://github.com/${owner}/${repo}/releases/download/${tag}/${filename}`
-  }
-  return res.send(data)
-})
-
-router.get('/:api/conans/:package/:version/:host/:owner/packages/:pkgid/download_urls', (req, res) => {
-  // TODO: Implement binary uploads.
-  return res.status(404).send()
-})
-
-router.delete('/:api/conans/:package/:version/:host/:owner/revisions/:rrev', async (req, res) => {
-  const { repo, tag, owner, reference } = parseRelease(req)
-
-  const { user, auth } = parseBearer(req)
-  const octokit = newOctokit({ auth })
-
-  let response = await octokit.rest.repos.getReleaseByTag({
-    owner,
-    repo,
-    tag,
-  })
-  if (response.status !== 200) {
-    return res.status(404).send(`Package not found: '${reference}'`)
-  }
-
-  for (const asset of response.data.assets) {
-    await octokit.rest.repos.deleteReleaseAsset({
+    // TODO: Factor out release search.
+    const r1 = await octokit.rest.repos.getReleaseByTag({
       owner,
       repo,
-      asset_id: asset.id
+      tag,
     })
-    // TODO: Handle errors.
-  }
-
-  // TODO: If rrev !== 0, delete release and change metadata
-
-  return res.send()
-})
-
-router.get('/:api/conans/:package/:version/:host/:owner/revisions/:rrev/files', getFiles)
-
-router.get('/:api/conans/:package/:version/:host/:owner/revisions/:rrev/files/:filename', getFile)
-
-router.put('/:api/conans/:package/:version/:host/:owner/revisions/:rrev/files/:filename', async (req, res) => {
-  const { repo, tag, owner, rrev, reference } = parseRelease(req)
-
-  const { user, auth } = parseBearer(req)
-  const octokit = newOctokit({ auth })
-
-  let response = await octokit.rest.repos.getReleaseByTag({
-    owner,
-    repo,
-    tag,
-  })
-  if (response.status !== 200) {
-    return res.status(422).send(`Package not found: '${reference}'`)
-  }
-
-  const release_id = response.data.id
-  const origin = new URL(response.data.upload_url).origin
-
-  const filename = req.params.filename
-  const extension = path.extname(filename)
-  const mimeType = MIME_TYPES[extension] || 'application/octet-stream'
-
-  response = await fetch(`${origin}/repos/${owner}/${repo}/releases/${release_id}/assets?name=${filename}`, {
-    method: 'POST',
-    headers: {
-      'Accept': 'application/vnd.github+json',
-      'Authorization': `Bearer ${auth}`,
-      'Content-Type': mimeType,
-      'Content-Length': req.get('Content-Length'),
-      'X-GitHub-Api-Version': '2022-11-28',
-    },
-    duplex: 'half',
-    body: req,
-  } as any)
-  if (response.status !== 200) {
-    return res.status(response.status).send()
-  }
-
-  if (filename === 'conanmanifest.txt' && rrev !== '0') {
-    // TODO: Add rrev metadata to root
-  }
-  return res.send()
-})
-
-router.get('/:api/conans/:package/:version/:host/:owner/revisions/:rrev/packages/:pkgid/latest', (req, res) => {
-  // TODO: Read from root release metadata
-  return res.status(404).send()
-})
-
-router.get('/:api/conans/:package/:version/:host/:owner/revisions/:rrev/packages/:pkgid/revisions/:prev/files', getFiles)
-
-router.get('/:api/conans/:package/:version/:host/:owner/revisions/:rrev/packages/:pkgid/revisions/:prev/files/:filename', getFile)
-
-router.put('/:api/conans/:package/:version/:host/:owner/revisions/:rrev/packages/:pkgid/revisions/:prev/files/:filename', async (req, res) => {
-  const { repo, tag, owner, reference, root } = parseRelease(req)
-
-  const { user, auth } = parseBearer(req)
-  const octokit = newOctokit({ auth })
-
-  let response = await octokit.rest.repos.getReleaseByTag({
-    owner,
-    repo,
-    tag,
-  })
-  if (response.status !== 200) {
-    response = await octokit.rest.repos.getCommit({
-      owner,
-      repo,
-      ref: root.tag,
-      mediaType: { format: 'sha' },
-    })
-    if (response.status !== 200) {
-      return res.status(422).send(`Release not found: '${root.reference}'`)
+    if (r1.status !== 200) {
+      return res.status(404).send(`Recipe not found: '${reference}'`)
     }
-    const target_commitish = response.data.sha
-    response = await octokit.rest.repos.createRelease({
+
+    // TODO: Get assets from release and return their `download_url`s.
+    const data = {}
+    const filenames = [
+      'conanmanifest.txt',
+      'conanfile.py',
+      'conan_export.tgz',
+      'conan_sources.tgz',
+    ]
+    for (const filename of filenames) {
+      data[
+        filename
+      ] = `https://github.com/${owner}/${repo}/releases/download/${tag}/${filename}`
+    }
+    return res.send(data)
+  },
+)
+
+router.get(
+  '/:api/conans/:package/:version/:host/:owner/packages/:pkgid/download_urls',
+  (req, res) => {
+    // TODO: Implement binary uploads.
+    return res.status(404).send()
+  },
+)
+
+router.delete(
+  '/:api/conans/:package/:version/:host/:owner/revisions/:rrev',
+  async (req, res) => {
+    const { repo, tag, owner, reference } = parseRelease(req)
+
+    const { user, auth } = parseBearer(req)
+    const octokit = newOctokit({ auth })
+
+    const r1 = await octokit.rest.repos.getReleaseByTag({
       owner,
       repo,
-      tag_name: tag,
-      target_commitish,
+      tag,
     })
-    if (response.status !== 200) {
-      return res.status(422).send(`Cannot create release: '${reference}'`)
+    if (r1.status !== 200) {
+      return res.status(404).send(`Package not found: '${reference}'`)
     }
-  }
 
-  const release_id = response.data.id
-  const origin = new URL(response.data.upload_url).origin
+    for (const asset of r1.data.assets) {
+      await octokit.rest.repos.deleteReleaseAsset({
+        owner,
+        repo,
+        asset_id: asset.id,
+      })
+      // TODO: Handle errors.
+    }
 
-  const filename = req.params.filename
-  const extension = path.extname(filename)
-  const mimeType = MIME_TYPES[extension] || 'application/octet-stream'
+    // TODO: If rrev !== 0, delete release and change metadata
 
-  // TODO: See if octokit.request works.
-  response = await fetch(`${origin}/repos/${owner}/${repo}/releases/${release_id}/assets?name=${filename}`, {
-    method: 'POST',
-    headers: {
-      'Accept': 'application/vnd.github+json',
-      'Authorization': `Bearer ${auth}`,
-      'Content-Type': mimeType,
-      'Content-Length': req.get('Content-Length'),
-      'X-GitHub-Api-Version': '2022-11-28',
-    },
-    duplex: 'half',
-    body: req,
-  } as any)
-  if (response.status !== 200) {
-    return res.status(response.status).send()
-  }
+    return res.send()
+  },
+)
 
-  if (filename === 'conanmanifest.txt') {
-    // TODO: Add rrev, pkgid, prev to root release metadata
-  }
-})
+router.get(
+  '/:api/conans/:package/:version/:host/:owner/revisions/:rrev/files',
+  getFiles,
+)
+
+router.get(
+  '/:api/conans/:package/:version/:host/:owner/revisions/:rrev/files/:filename',
+  getFile,
+)
+
+router.put(
+  '/:api/conans/:package/:version/:host/:owner/revisions/:rrev/files/:filename',
+  async (req, res) => {
+    const { repo, tag, owner, rrev, reference } = parseRelease(req)
+
+    const { user, auth } = parseBearer(req)
+    const octokit = newOctokit({ auth })
+
+    const oldRelease = await octokit.rest.repos.getReleaseByTag({
+      owner,
+      repo,
+      tag,
+    })
+    if (oldRelease.status !== 200) {
+      return res.status(422).send(`Package not found: '${reference}'`)
+    }
+
+    const release_id = oldRelease.data.id
+    const origin = new URL(oldRelease.data.upload_url).origin
+
+    const filename = req.params.filename
+    const extension = path.extname(filename)
+    const mimeType = MIME_TYPES[extension] || 'application/octet-stream'
+
+    const newRelease = await fetch(
+      `${origin}/repos/${owner}/${repo}/releases/${release_id}/assets?name=${filename}`,
+      {
+        method: 'POST',
+        headers: {
+          Accept: 'application/vnd.github+json',
+          Authorization: `Bearer ${auth}`,
+          'Content-Type': mimeType,
+          'Content-Length': req.get('Content-Length'),
+          'X-GitHub-Api-Version': '2022-11-28',
+        },
+        duplex: 'half',
+        body: req,
+      } as any,
+    )
+    if (newRelease.status !== 200) {
+      return res.status(newRelease.status).send(newRelease.text())
+    }
+
+    if (filename === 'conanmanifest.txt' && rrev !== '0') {
+      // TODO: Add rrev metadata to root
+    }
+    return res.send()
+  },
+)
+
+router.get(
+  '/:api/conans/:package/:version/:host/:owner/revisions/:rrev/packages/:pkgid/latest',
+  (req, res) => {
+    // TODO: Read from root release metadata
+    return res.status(404).send()
+  },
+)
+
+router.get(
+  '/:api/conans/:package/:version/:host/:owner/revisions/:rrev/packages/:pkgid/revisions/:prev/files',
+  getFiles,
+)
+
+router.get(
+  '/:api/conans/:package/:version/:host/:owner/revisions/:rrev/packages/:pkgid/revisions/:prev/files/:filename',
+  getFile,
+)
+
+router.put(
+  '/:api/conans/:package/:version/:host/:owner/revisions/:rrev/packages/:pkgid/revisions/:prev/files/:filename',
+  async (req, res) => {
+    const { repo, tag, owner, reference, root } = parseRelease(req)
+
+    const { user, auth } = parseBearer(req)
+    const octokit = newOctokit({ auth })
+
+    let r1 = await octokit.rest.repos.getReleaseByTag({
+      owner,
+      repo,
+      tag,
+    })
+    if (r1.status !== 200) {
+      const r2 = await octokit.rest.repos.getCommit({
+        owner,
+        repo,
+        ref: root.tag,
+        mediaType: { format: 'sha' },
+      })
+      if (r2.status !== 200) {
+        return res.status(422).send(`Release not found: '${root.reference}'`)
+      }
+      const target_commitish = r2.data.sha
+      r1 = (await octokit.rest.repos.createRelease({
+        owner,
+        repo,
+        tag_name: tag,
+        target_commitish,
+      })) as any as typeof r1
+      if (r1.status !== 200) {
+        return res.status(422).send(`Cannot create release: '${reference}'`)
+      }
+    }
+
+    const release_id = r1.data.id
+    const origin = new URL(r1.data.upload_url).origin
+
+    const filename = req.params.filename
+    const extension = path.extname(filename)
+    const mimeType = MIME_TYPES[extension] || 'application/octet-stream'
+
+    // TODO: See if octokit.request works.
+    const r3 = await fetch(
+      `${origin}/repos/${owner}/${repo}/releases/${release_id}/assets?name=${filename}`,
+      {
+        method: 'POST',
+        headers: {
+          Accept: 'application/vnd.github+json',
+          Authorization: `Bearer ${auth}`,
+          'Content-Type': mimeType,
+          'Content-Length': req.get('Content-Length'),
+          'X-GitHub-Api-Version': '2022-11-28',
+        },
+        duplex: 'half',
+        body: req,
+      } as any,
+    )
+    if (r3.status !== 200) {
+      return res.status(r3.status).send()
+    }
+
+    if (filename === 'conanmanifest.txt') {
+      // TODO: Add rrev, pkgid, prev to root release metadata
+    }
+  },
+)
 
 /** This may be impossible to implement. */
 router.get('/:api/conans/search', async (req, res) => {
@@ -438,23 +517,23 @@ router.get('/:api/conans/search', async (req, res) => {
 
   const { user, auth } = parseBearer(req)
   const octokit = newOctokit({ auth })
-  const response = await octokit.rest.search.repos({
+  const r1 = await octokit.rest.search.repos({
     q: `${query} in:name topic:redirectory`,
     sort: 'stars',
     order: 'desc',
   })
-  if (response.status !== 200) {
+  if (r1.status !== 200) {
     return res.send({ results })
   }
 
-  for (const result of response.data.items) {
+  for (const result of r1.data.items) {
     const owner = result.owner.login
     const repo = result.name
-    const response = await octokit.rest.repos.listReleases({ owner, repo })
-    if (response.status !== 200) {
+    const r2 = await octokit.rest.repos.listReleases({ owner, repo })
+    if (r2.status !== 200) {
       continue
     }
-    for (const release of response.data) {
+    for (const release of r2.data) {
       const tag = release.tag_name
       // TODO: Good way to translate backwards from release to reference?
       results.push(`${repo}/${tag}@github/${owner}`)

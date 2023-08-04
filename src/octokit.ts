@@ -10,9 +10,9 @@ const traps = {
     } catch (error) {
       return error.response
     }
-  }
+  },
 }
 
-export function newOctokit(options) {
+export function newOctokit(options): Octokit {
   return new Proxy(new Octokit(options), traps)
 }
