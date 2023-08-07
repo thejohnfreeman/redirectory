@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.16)
+project(exmaple LANGUAGES CXX)
+find_package(ZLIB 1.2.13 REQUIRED)
+add_executable(main)
+target_sources(main PRIVATE main.cpp)
+target_link_libraries(main PRIVATE ZLIB::ZLIB)
+add_custom_target(execute COMMAND main)

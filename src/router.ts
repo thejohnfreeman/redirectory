@@ -5,6 +5,8 @@ import { OctokitResponse } from '@octokit/types'
 import { Octokit } from 'octokit'
 import { newOctokit } from './octokit.js'
 
+const verbosity = parseInt(process.env.VERBOSITY) || 0
+
 function nowString() {
   return new Date().toISOString()
 }
@@ -33,11 +35,13 @@ function unbase64(input) {
   return Buffer.from(input, 'base64').toString('ascii')
 }
 
-class HttpError {
+class HttpError extends Error {
   constructor(
     public code: number,
-    public message: string,
-  ) {}
+    message: string,
+  ) {
+    super(message)
+  }
 }
 
 class BadRequest extends HttpError {
@@ -62,14 +66,6 @@ class BadGateway extends HttpError {
   constructor(message: string) {
     super(502, message)
   }
-}
-
-function httpErrorHandler(err, req, res, next) {
-  if (err instanceof HttpError) {
-    return res.status(err.code).send(err.message)
-  }
-  console.error(err)
-  return res.status(500).send(err.message)
 }
 
 function parseBearer(req) {
@@ -234,6 +230,9 @@ class RootRelease {
     let conan: RootMetadata = {
       revisions: [{ revision: '0', time: nowString(), packages: [] }],
     }
+    // If the body is entirely an HTML comment, GitHub will show it.
+    // Use a non-whitespace HTML string that renders as whitespace
+    // to hide the comment.
     let prefix = '&nbsp;\n'
     let suffix = ''
 
@@ -251,8 +250,7 @@ class RootRelease {
         owner: params.owner,
         repo: params.repo,
         tag_name: params.root.tag,
-        // If the body is entirely an HTML comment, GitHub will show it.
-        body: '&nbsp;\n' + RootMetadata.serialize(conan),
+        body: prefix + RootMetadata.serialize(conan),
       })
       if (r2.status !== 201) {
         throw new HttpError(r2.status, r2.data.body)
@@ -262,8 +260,8 @@ class RootRelease {
     } else {
       github = r1.data
 
-      assert(typeof r1.data.body === 'string')
-      let match = r1.data.body.match(
+      const body = r1.data.body || prefix
+      let match = body.match(
         /([\s\S]*)<!--\s*redirectory\s*([\s\S]*?)\s*-->([\s\S]*)/,
       )
       if (match) {
@@ -277,7 +275,7 @@ class RootRelease {
           throw new BadGateway(`Bad metadata comment: ${params.root.reference}`)
         }
       } else {
-        prefix = r1.data.body
+        prefix = body
         conan = { revisions: [] }
       }
     }
@@ -310,6 +308,14 @@ namespace PATHS {
 
 const router = express.Router()
 
+if (verbosity > 0) {
+  console.log('logging enabled')
+  router.use((req, res, next) => {
+    console.log(req.method, req.url)
+    next()
+  })
+}
+
 router.get('/:api/ping', (req, res) => {
   res.set('X-Conan-Server-Capabilities', 'complex_search,revisions').send()
 })
@@ -324,11 +330,11 @@ router.get('/:api/ping', (req, res) => {
 router.get('/:api/users/authenticate', (req, res) => {
   const header = req.get('Authorization')
   if (!header) {
-    return res.status(400).send('Missing header: Authorization')
+    throw new BadRequest('Missing header: Authorization')
   }
   const match = header.match(/Basic (.+)/)
   if (!match) {
-    return res.status(400).send('Malformed header: Authorization')
+    throw new BadRequest('Malformed header: Authorization')
   }
   res.type('text/plain').send(match[1])
 })
@@ -639,6 +645,12 @@ router.all('*', (req, res) => {
   res.status(501).send()
 })
 
-router.use(httpErrorHandler)
+router.use((err, req, res, next) => {
+  console.error(err)
+  if (err instanceof HttpError) {
+    return res.status(err.code).send(err.message)
+  }
+  return res.status(500).send(err.message)
+})
 
 export default router
