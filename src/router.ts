@@ -68,6 +68,12 @@ class BadGateway extends HttpError {
   }
 }
 
+class Conflict extends HttpError {
+  constructor(message: string) {
+    super(409, message)
+  }
+}
+
 function parseBearer(req) {
   const header = req.get('Authorization')
   if (!header) {
@@ -221,7 +227,7 @@ class RootRelease {
     private suffix: string,
   ) {}
 
-  static async load(
+  static async open(
     octokit: Octokit,
     params: ReleaseParameters,
     { force = false } = {},
@@ -246,6 +252,9 @@ class RootRelease {
         throw new NotFound(`Package not found: '${params.reference}'`)
       }
 
+      // This will create the root tag,
+      // pointing at the tip of the default branch,
+      // if it does not exist.
       const r2 = await octokit.rest.repos.createRelease({
         owner: params.owner,
         repo: params.repo,
@@ -367,7 +376,7 @@ router.get(`${PATHS.reference}/latest`, async (req, res) => {
   const params = parseRelease(req)
   const { user, auth } = parseBearer(req)
   const octokit = newOctokit({ auth })
-  const root = await RootRelease.load(octokit, params)
+  const root = await RootRelease.open(octokit, params)
   if (root.conan.revisions.length === 0) {
     return res.status(404).send(`Recipe not found: ${params.reference}`)
   }
@@ -379,7 +388,7 @@ router.get(`${PATHS.reference}/revisions`, async (req, res) => {
   const params = parseRelease(req)
   const { user, auth } = parseBearer(req)
   const octokit = newOctokit({ auth })
-  const root = await RootRelease.load(octokit, params)
+  const root = await RootRelease.open(octokit, params)
   if (root.conan.revisions.length === 0) {
     return res.status(404).send(`Recipe not found: ${params.reference}`)
   }
@@ -395,7 +404,7 @@ router.get(`${PATHS.reference}/download_urls`, async (req, res) => {
   const params = parseRelease(req)
   const { user, auth } = parseBearer(req)
   const octokit = newOctokit({ auth })
-  const root = await RootRelease.load(octokit, params)
+  const root = await RootRelease.open(octokit, params)
   const data = {}
   for (const asset of root.github.assets) {
     data[asset.name] = asset.browser_download_url
@@ -412,7 +421,7 @@ router.delete(`${PATHS.rrev}`, async (req, res) => {
   const params = parseRelease(req)
   const { user, auth } = parseBearer(req)
   const octokit = newOctokit({ auth })
-  const root = await RootRelease.load(octokit, params)
+  const root = await RootRelease.open(octokit, params)
   const index = root.conan.revisions.findIndex(
     (r) => r.revision === params.rrev,
   )
@@ -464,7 +473,7 @@ router.put(`${PATHS.rrev}/files/:filename`, async (req, res) => {
   const { owner, repo, rrev } = params
   const { user, auth } = parseBearer(req)
   const octokit = newOctokit({ auth })
-  const root = await RootRelease.load(octokit, params, { force: true })
+  const root = await RootRelease.open(octokit, params, { force: true })
 
   let release_id: number
   let origin: string

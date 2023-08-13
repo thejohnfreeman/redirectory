@@ -81,7 +81,9 @@ cd ..
 rm --recursive --force ${cmake_slug}
 
 # Install Conan and PyTest.
-pip3 install conan==${conan_version} pytest cupcake
+pip3 install conan==${conan_version} pytest cupcake shush
+
+conan config set general.revisions_enabled=True
 
 conan profile new --detect default
 conan profile update settings.compiler=gcc default
