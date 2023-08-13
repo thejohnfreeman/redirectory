@@ -50,6 +50,9 @@ class Context:
         assert(response.status == 201)
         conn.close()
 
+    def remove():
+        return sh> sh.conan('remove', '--force', f'{self.package}/*@github')
+
     def upload(self, all=False):
         return sh> sh.conan('upload', self.reference, all and '--all', '--remote', 'local')
 
@@ -57,7 +60,7 @@ class Context:
         root = pathlib.Path().resolve() / 'tests' / 'example'
         with tempfile.TemporaryDirectory() as cwd:
             sh_ = sh(cwd=cwd)
-            sh_> sh_.conan('install', root, build and ['--build', 'missing'])
+            sh_.here> sh_.conan('install', root, build and ['--build', 'missing']).join()
             sh_> sh_.cmake('-DCMAKE_TOOLCHAIN_FILE=conan_toolchain.cmake', '-DCMAKE_BUILD_TYPE=Release', root)
             sh_> sh_.cmake('--build', '.')
             proc = sh_.here> sh_['./main']
@@ -79,8 +82,7 @@ def before_all(ctx):
 
 def test_hello(ctx):
     ctx.upload()
-    with pytest.raises(sp.CalledProcessError) as error:
+    ctx.remove()
+    with forgive(stdout_matches('ERROR: Unable to find')):
         ctx.install()
-    import pprint
-    pprint.pprint(error)
     ctx.install(build=True)

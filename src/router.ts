@@ -112,16 +112,18 @@ function parseRelease(req): ReleaseParameters {
   const rrev = req.params.rrev
 
   if (rrev && rrev !== '0') {
-    // `:` is not valid in a Git tag name.
-    suffix += '/' + rrev
-    reference += ':' + rrev
+    suffix += '#' + rrev
+    reference += '#' + rrev
   }
   if (req.params.pkgid) {
-    suffix += '#' + req.params.pkgid
-    reference += '#' + req.params.pkgid
+    // `:` is not valid in a Git tag name.
+    // Two tags cannot coexist when one is a prefix of the other,
+    // followed immediately by a directory separator (`/`).
+    suffix += '@' + req.params.pkgid
+    reference += ':' + req.params.pkgid
     if (req.params.prev) {
-      suffix += '/' + req.params.prev
-      reference += ':' + req.params.prev
+      suffix += '#' + req.params.prev
+      reference += '#' + req.params.prev
     }
   }
 
@@ -321,6 +323,10 @@ if (verbosity > 0) {
   console.log('logging enabled')
   router.use((req, res, next) => {
     console.log(req.method, req.url)
+    res.on('finish', () => {
+      const type = res.get('Content-Type')
+      console.log(res.statusCode, req.url, type)
+    })
     next()
   })
 }
@@ -487,7 +493,7 @@ router.put(`${PATHS.rrev}/files/:filename`, async (req, res) => {
       const r1 = await octokit.rest.repos.createRelease({
         owner,
         repo,
-        tag_name: params.root.tag,
+        tag_name: params.tag,
       })
       // TODO: Handle error.
       release_id = r1.data.id

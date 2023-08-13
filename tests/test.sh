@@ -4,12 +4,11 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-image=8aa7f6537de6
+image=d6a1f2611951
 
 sudo docker run --rm -i \
 --mount type=bind,source=$(pwd),target=/root/redirectory,readonly \
 ${image} <<EOF
-pip3 install shush
 cd redirectory
 PORT=80 npm start &
 sleep 2
