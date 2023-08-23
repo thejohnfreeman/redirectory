@@ -4,8 +4,7 @@ import path from 'path'
 import { OctokitResponse } from '@octokit/types'
 import { Octokit } from 'octokit'
 import { newOctokit } from './octokit.js'
-
-const verbosity = parseInt(process.env.VERBOSITY) || 0
+import { release } from 'node:process'
 
 function nowString() {
   return new Date().toISOString()
@@ -110,20 +109,22 @@ function parseRelease(req): ReleaseParameters {
   let reference = root.reference
   let suffix = ''
   const rrev = req.params.rrev
+  const pkgid = req.params.pkgid
+  const prev = req.params.prev
 
   if (rrev && rrev !== '0') {
     suffix += '#' + rrev
     reference += '#' + rrev
   }
-  if (req.params.pkgid) {
+  if (pkgid) {
     // `:` is not valid in a Git tag name.
     // Two tags cannot coexist when one is a prefix of the other,
     // followed immediately by a directory separator (`/`).
-    suffix += '@' + req.params.pkgid
-    reference += ':' + req.params.pkgid
-    if (req.params.prev) {
-      suffix += '#' + req.params.prev
-      reference += '#' + req.params.prev
+    suffix += '@' + pkgid
+    reference += ':' + pkgid
+    if (prev) {
+      suffix += '#' + prev
+      reference += '#' + prev
     }
   }
 
@@ -135,7 +136,7 @@ function parseRelease(req): ReleaseParameters {
   root.tag = match[1] + version + match[2]
   const tag = root.tag + suffix
 
-  return { repo, tag, host, owner, rrev, reference, root }
+  return { repo, tag, host, owner, rrev, pkgid, prev, reference, root }
 }
 
 /** Return a list of asset names for the requested release. */
@@ -168,7 +169,7 @@ function getFile(req, res) {
   // TODO: Do we need to look up the download URL or can we assume its form?
   return res.redirect(
     301,
-    `https://github.com/${owner}/${repo}/releases/download/${tag}/${filename}`,
+    `https://github.com/${owner}/${repo}/releases/download/${encodeURIComponent(tag)}/${filename}`,
   )
 }
 
@@ -194,12 +195,15 @@ interface RootMetadata {
       origin: string
     }
     packages: {
-      revision: string
-      time: string
-      release: {
-        id: number
-        origin: string
-      }
+      id: string,
+      revisions: {
+        revision: string
+        time: string
+        release: {
+          id: number
+          origin: string
+        }
+      }[]
     }[]
   }[]
 }
@@ -318,18 +322,6 @@ namespace PATHS {
 }
 
 const router = express.Router()
-
-if (verbosity > 0) {
-  console.log('logging enabled')
-  router.use((req, res, next) => {
-    console.log(req.method, req.url)
-    res.on('finish', () => {
-      const type = res.get('Content-Type')
-      console.log(res.statusCode, req.url, type)
-    })
-    next()
-  })
-}
 
 router.get('/:api/ping', (req, res) => {
   res.set('X-Conan-Server-Capabilities', 'complex_search,revisions').send()
@@ -456,12 +448,14 @@ router.delete(`${PATHS.rrev}`, async (req, res) => {
   }
 
   for (const pkg of recipe.packages) {
-    await octokit.rest.repos.deleteRelease({
-      owner: params.owner,
-      repo: params.repo,
-      release_id: pkg.release.id,
-    })
-    // TODO: Handle error.
+    for (const build of pkg.revisions) {
+      await octokit.rest.repos.deleteRelease({
+        owner: params.owner,
+        repo: params.repo,
+        release_id: build.release.id,
+      })
+    }
+    // TODO: Handle errors.
   }
 
   root.conan.revisions.splice(index, 1)
@@ -508,7 +502,7 @@ router.put(`${PATHS.rrev}/files/:filename`, async (req, res) => {
       },
       packages: [],
     })
-    root.save()
+    await root.save()
   } else {
     if (rrev === '0') {
       release_id = root.github.id
@@ -539,16 +533,28 @@ router.put(`${PATHS.rrev}/files/:filename`, async (req, res) => {
       body: req,
     } as any,
   )
-  if (r1.status !== 200) {
+  if (r1.status !== 201) {
     return res.status(r1.status).send(r1.text())
   }
 
-  return res.send()
+  return res.status(201).send()
 })
 
-router.get(`${PATHS.pkgid}/latest`, (req, res) => {
-  // TODO: Read from root release metadata
-  return res.status(404).send()
+router.get(`${PATHS.pkgid}/latest`, async (req, res) => {
+  const params = parseRelease(req)
+  const { user, auth } = parseBearer(req)
+  const octokit = newOctokit({ auth })
+  const root = await RootRelease.open(octokit, params)
+  const recipe = root.conan.revisions.find(r => r.revision === params.rrev)
+  if (!recipe) {
+    return res.status(404).send(`Recipe not found: ${params.reference}`)
+  }
+  const pkg = recipe.packages.find(p => p.id === params.pkgid)
+  if (!pkg) {
+    return res.status(404).send(`Package not found: ${params.reference}`)
+  }
+  const { revision, time } = maxBy(pkg.revisions, ({ time }) => time)
+  return res.send({ revision, time })
 })
 
 router.get(`${PATHS.prev}/files`, getFiles)
@@ -556,7 +562,8 @@ router.get(`${PATHS.prev}/files`, getFiles)
 router.get(`${PATHS.prev}/files/:filename`, getFile)
 
 router.put(`${PATHS.prev}/files/:filename`, async (req, res) => {
-  const { repo, tag, owner, reference, root } = parseRelease(req)
+  const params = parseRelease(req)
+  const { repo, tag, owner } = params
   const { user, auth } = parseBearer(req)
   const octokit = newOctokit({ auth })
 
@@ -570,21 +577,21 @@ router.put(`${PATHS.prev}/files/:filename`, async (req, res) => {
     const r2 = await octokit.rest.repos.getCommit({
       owner,
       repo,
-      ref: root.tag,
+      ref: params.root.tag,
       mediaType: { format: 'sha' },
     })
     if (r2.status !== 200) {
-      return res.status(422).send(`Release not found: '${root.reference}'`)
+      return res.status(422).send(`Release not found: '${params.root.reference}'`)
     }
-    const target_commitish = r2.data.sha
+    const target_commitish = r2.data as any as string
     r1 = await octokit.rest.repos.createRelease({
       owner,
       repo,
       tag_name: tag,
       target_commitish,
     })
-    if (r1.status !== 200) {
-      return res.status(422).send(`Cannot create release: '${reference}'`)
+    if (r1.status !== 201) {
+      return res.status(422).send(`Cannot create release: '${params.reference}'`)
     }
   }
 
@@ -611,13 +618,37 @@ router.put(`${PATHS.prev}/files/:filename`, async (req, res) => {
       body: req,
     } as any,
   )
-  if (r3.status !== 200) {
-    return res.status(r3.status).send()
+  if (r3.status !== 201) {
+    return res.status(r3.status).send(r3.text())
   }
 
   if (filename === 'conanmanifest.txt') {
-    // TODO: Add rrev, pkgid, prev to root release metadata
+    const { rrev, pkgid, prev } = params
+    const root = await RootRelease.open(octokit, params)
+    let recipe = root.conan.revisions.find(r => r.revision === rrev)
+    if (!recipe) {
+      recipe = { revision: rrev, time: nowString(), packages: [] }
+      root.conan.revisions.push(recipe)
+    }
+    let pkg = recipe.packages.find(p => p.id === pkgid)
+    if (!pkg) {
+      pkg = { id: pkgid, revisions: [] }
+      recipe.packages.push(pkg)
+    }
+    const build_ = {
+      revision: prev,
+      time: nowString(),
+      release: { id: release_id, origin },
+    }
+    const build = pkg.revisions.find(r => r.revision === prev)
+    if (!build) {
+      pkg.revisions.push(build_)
+    } else {
+      Object.assign(build, build_)
+    }
+    await root.save()
   }
+  return res.status(201).send()
 })
 
 /** This may be impossible to implement. */
