@@ -6,7 +6,7 @@ set -o pipefail
 
 revisions=${1:-True}
 
-image=c342b8f5f65a
+image=b3607cc3d8ad
 
 sudo docker run --rm -i \
 --mount type=bind,source=$(pwd),target=/root/redirectory \
