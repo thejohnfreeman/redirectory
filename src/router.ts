@@ -388,7 +388,7 @@ router.get(`${PATHS.reference}/revisions`, async (req, res) => {
   const octokit = newOctokit({ auth })
   const root = await RootRelease.open(octokit, params)
   if (root.conan.revisions.length === 0) {
-    return res.status(404).send(`Recipe not found: ${params.reference}`)
+    return res.status(404).send(`Recipe not found: '${params.reference}'`)
   }
   return res.send({
     revisions: root.conan.revisions.map(({ revision, time }) => ({

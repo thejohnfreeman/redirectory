@@ -24,6 +24,14 @@ upload="conan upload --remote ${remote} ${reference}"
 install="conan install --remote ${remote} ${reference}"
 remove="conan remove --force ${reference}"
 
+header() {
+  set +o xtrace
+  echo ================================================================== 1>&2
+  echo $@ 1>&2
+  echo ================================================================== 1>&2
+  set -o xtrace
+}
+
 capture() {
   exec 2> >(tee ${output})
 }
@@ -46,12 +54,13 @@ build() {
 }
 
 wait_for() {
+  status=${2:-200}
   json=$(mktemp)
   trap "rm -f ${json}" RETURN
   tries=0
-  while ! curl --location --include ${1} | grep --quiet 'HTTP/2 200'; do
+  while ! curl --location --include ${1} | grep --quiet "HTTP/2 ${status}"; do
       let "tries = ${tries} + 1"
-      [ ${tries} -lt 3 ] || exit 1
+      [ ${tries} -lt 30 ] || exit 1
       sleep 1
   done
 }
@@ -71,16 +80,17 @@ binary_manifest=${base_url}/revisions/${rrev}/packages/${pkgid}/revisions/${prev
 
 conan user --remote ${remote} ${owner} --password $(cat github.token)
 
-echo ================================================================
-echo RESET
-echo ================================================================
-${remove} --remote ${remote}
+header RESET
+${remove} --remote ${remote} || true
+wait_for ${source_manifest} 404
+sleep 1
+wait_for ${source_manifest} 404
 
-echo ================================================================
-echo BUILD FROM SOURCE
-echo ================================================================
+header BUILD FROM SOURCE
 ${upload}
 ${remove}
+wait_for ${source_manifest}
+sleep 1
 wait_for ${source_manifest}
 capture
 ! ${install}
@@ -89,20 +99,20 @@ expect "ERROR: Missing prebuilt package for '${reference}'" \
 ${install} --build missing
 build
 
-echo ================================================================
-echo BUILD FROM BINARY
-echo ================================================================
+header BUILD FROM BINARY
 ${upload} --all
 ${remove}
+wait_for ${binary_manifest}
+sleep 1
 wait_for ${binary_manifest}
 ${install}
 build
 
-echo ================================================================
-echo BUILD FROM SOURCE AGAIN
-echo ================================================================
+header BUILD FROM SOURCE AGAIN
 ${remove} --remote ${remote} --packages
 ${remove}
+wait_for ${source_manifest}
+sleep 1
 wait_for ${source_manifest}
 capture
 ! ${install}
@@ -110,21 +120,19 @@ expect "ERROR: Missing prebuilt package for '${reference}'"
 ${install} --build missing
 build
 
-echo ================================================================
-echo RE-REMOVE
-echo ================================================================
+header RE-REMOVE
 ${remove} --remote ${remote}
+conan copy ${reference} test/test --all --force
 ${remove}
 capture
-! ${install}
+! ${install} --build missing
 expect "ERROR: ${reference} was not found in remote '${remote}'"
 capture
 ! ${remove} --remote ${remote}
 expect "ERROR: 404: Not Found."
 
-echo ================================================================
-echo RE-UPLOAD
-echo ================================================================
+header RE-UPLOAD
+conan copy ${repo}/${tag}@test/test github/${owner} --all
 ${upload} --all
 ${upload}
 ${upload} --all
@@ -133,4 +141,4 @@ ${upload} --all
 # ${remove}
 # ${install}
 
-echo passed!
+header PASSED!
