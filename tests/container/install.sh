@@ -32,6 +32,7 @@ dependencies+=' python3-pip'
 dependencies+=' make'
 # - compilers
 dependencies+=" gcc-${gcc_version} g++-${gcc_version}"
+dependencies+=' jq tcpdump'
 apt install --yes ${dependencies}
 
 # Install Node and NPM.
@@ -81,9 +82,10 @@ cd ..
 rm --recursive --force ${cmake_slug}
 
 # Install Conan and PyTest.
-pip3 install conan==${conan_version} pytest cupcake shush
+pip3 install conan==${conan_version} pytest cupcake
 
-conan config set general.revisions_enabled=True
+conan config set general.retry=0
+conan config set general.retry_wait=0
 
 conan profile new --detect default
 conan profile update settings.compiler=gcc default
@@ -93,9 +95,9 @@ conan profile update settings.compiler.cppstd=20 default
 conan profile update env.CC=/usr/bin/gcc default
 conan profile update env.CXX=/usr/bin/g++ default
 
-conan remote add local http://localhost
+conan remote add redirectory http://localhost
 
-conan install zlib/1.2.13@
+conan install zlib/1.2.13@ --build
 
 # Clean up.
 apt clean

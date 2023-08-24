@@ -3,11 +3,13 @@
 set -o nounset
 set -o errexit
 set -o pipefail
+set -o xtrace
 
 owner=thejohnfreeman
 repo=zlib
 tag=1.2.13
 remote=redirectory
+host=localhost
 
 reference=${repo}/${tag}@github/${owner}
 
@@ -21,6 +23,10 @@ reference=${repo}/${tag}@github/${owner}
 upload="conan upload --remote ${remote} ${reference}"
 install="conan install --remote ${remote} ${reference}"
 remove="conan remove --force ${reference}"
+
+capture() {
+  exec 2> >(tee ${output})
+}
 
 expect() {
   grep --quiet "${1}" ${output}
@@ -39,8 +45,29 @@ build() {
   popd
 }
 
+wait_for() {
+  json=$(mktemp)
+  trap "rm -f ${json}" RETURN
+  tries=0
+  while ! curl --location --include ${1} | grep --quiet 'HTTP/2 200'; do
+      let "tries = ${tries} + 1"
+      [ ${tries} -lt 3 ] || exit 1
+      sleep 1
+  done
+}
+
 output=$(mktemp)
 trap "rm -f ${output}" EXIT
+
+# conan info ${reference} --json ${output}
+file=~/.conan/data/${repo}/${tag}/github/${owner}/metadata.json
+pkgid=$(<${file} jq --raw-output '.packages | keys[0]')
+prev=$(<${file} jq --raw-output ".packages[\"${pkgid}\"].revision")
+rrev=$(<${file} jq --raw-output ".packages[\"${pkgid}\"].recipe_revision")
+
+base_url=http://${host}/v2/conans/${repo}/${tag}/github/${owner}
+source_manifest=${base_url}/revisions/${rrev}/files/conanmanifest.txt
+binary_manifest=${base_url}/revisions/${rrev}/packages/${pkgid}/revisions/${prev}/files/conanmanifest.txt
 
 conan user --remote ${remote} ${owner} --password $(cat github.token)
 
@@ -54,12 +81,11 @@ echo BUILD FROM SOURCE
 echo ================================================================
 ${upload}
 ${remove}
-sleep 1
-exec 2> >(tee ${output})
+wait_for ${source_manifest}
+capture
 ! ${install}
-expect "ERROR: Missing prebuilt package for '${reference}'"
-# This means that the manifest was not yet available to download from GitHub:
-# expect "ERROR: ${reference} was not found in remote '${remote}'"
+expect "ERROR: Missing prebuilt package for '${reference}'" \
+  || expect "ERROR: ${reference} was not found in remote '${remote}'"
 ${install} --build missing
 build
 
@@ -68,7 +94,7 @@ echo BUILD FROM BINARY
 echo ================================================================
 ${upload} --all
 ${remove}
-sleep 1
+wait_for ${binary_manifest}
 ${install}
 build
 
@@ -77,9 +103,34 @@ echo BUILD FROM SOURCE AGAIN
 echo ================================================================
 ${remove} --remote ${remote} --packages
 ${remove}
-sleep 1
+wait_for ${source_manifest}
+capture
 ! ${install}
+expect "ERROR: Missing prebuilt package for '${reference}'"
 ${install} --build missing
 build
+
+echo ================================================================
+echo RE-REMOVE
+echo ================================================================
+${remove} --remote ${remote}
+${remove}
+capture
+! ${install}
+expect "ERROR: ${reference} was not found in remote '${remote}'"
+capture
+! ${remove} --remote ${remote}
+expect "ERROR: 404: Not Found."
+
+echo ================================================================
+echo RE-UPLOAD
+echo ================================================================
+${upload} --all
+${upload}
+${upload} --all
+# TODO: Use default token for read-only commands.
+# conan user --clean
+# ${remove}
+# ${install}
 
 echo passed!

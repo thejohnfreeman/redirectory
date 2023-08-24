@@ -78,7 +78,7 @@ function parseBearer(req) {
   if (!header) {
     throw new BadRequest('Missing header: Authorization')
   }
-  const m1 = header.match(/Bearer (.+)/)
+  const m1 = header.match(/^Bearer\s+(\S+?)\s*$/)
   if (!m1) {
     throw new BadRequest('Malformed header: Authorization')
   }
@@ -538,6 +538,34 @@ router.put(`${PATHS.rrev}/files/:filename`, async (req, res) => {
   }
 
   return res.status(201).send()
+})
+
+router.delete(`${PATHS.rrev}/packages`, async (req, res) => {
+  const params = parseRelease(req)
+  const { user, auth } = parseBearer(req)
+  const octokit = newOctokit({ auth })
+  const root = await RootRelease.open(octokit, params)
+
+  const { rrev } = params
+  let recipe = root.conan.revisions.find(r => r.revision === rrev)
+  if (!recipe) {
+    return res.send()
+  }
+
+  for (const pkg of recipe.packages) {
+    for (const build of pkg.revisions) {
+      await octokit.rest.repos.deleteRelease({
+        owner: params.owner,
+        repo: params.repo,
+        release_id: build.release.id,
+      })
+    }
+  }
+
+  recipe.packages = []
+  await root.save()
+
+  return res.send()
 })
 
 router.get(`${PATHS.pkgid}/latest`, async (req, res) => {

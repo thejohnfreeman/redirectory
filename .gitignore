@@ -2,3 +2,5 @@
 /node_modules/
 /github.token
 /dist/
+/redirectory.pcap
+/redirectory.server.log
