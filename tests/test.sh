@@ -81,7 +81,10 @@ binary_manifest=${base_url}/revisions/${rrev}/packages/${pkgid}/revisions/${prev
 conan user --remote ${remote} ${owner} --password $(cat github.token)
 
 header RESET
-${remove} --remote ${remote} || true
+capture
+if ! ${remove} --remote ${remote}; then
+  expect "ERROR: 404: Not Found."
+fi
 wait_for ${source_manifest} 404
 sleep 1
 wait_for ${source_manifest} 404

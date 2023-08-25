@@ -99,7 +99,7 @@ type ReleaseParameters = {
   [key: string]: any
 }
 
-function parseRelease(req): ReleaseParameters {
+function parseParams(req): ReleaseParameters {
   const repo = req.params.package
   const root: any = {}
   const version = req.params.version
@@ -141,7 +141,7 @@ function parseRelease(req): ReleaseParameters {
 
 /** Return a list of asset names for the requested release. */
 async function getFiles(req, res) {
-  const { repo, tag, owner, reference } = parseRelease(req)
+  const { repo, tag, owner, reference } = parseParams(req)
 
   const { user, auth } = parseBearer(req)
   const octokit = newOctokit({ auth })
@@ -164,7 +164,7 @@ async function getFiles(req, res) {
 
 /** Return a redirect for the requested file. */
 function getFile(req, res) {
-  const { repo, tag, owner } = parseRelease(req)
+  const { repo, tag, owner } = parseParams(req)
   const filename = req.params.filename
   // TODO: Do we need to look up the download URL or can we assume its form?
   return res.redirect(
@@ -173,6 +173,9 @@ function getFile(req, res) {
   )
 }
 
+/**
+ * Parse JSON at the start of a string, after any whitespace.
+ */
 function parseJsonPrefix(text: string) {
   try {
     return JSON.parse(text)
@@ -186,30 +189,36 @@ function parseJsonPrefix(text: string) {
   return JSON.parse(text)
 }
 
-interface RootMetadata {
-  revisions: {
+interface PackageRevisionMetadata {
+  revision: string
+  time: string
+  release: {
+    id: number
+    origin: string
+  }
+}
+
+interface PackageMetadata {
+  id: string,
+  revisions: PackageRevisionMetadata[]
+}
+
+interface RecipeRevisionMetadata {
     revision: string
     time: string
     release?: {
       id: number
       origin: string
     }
-    packages: {
-      id: string,
-      revisions: {
-        revision: string
-        time: string
-        release: {
-          id: number
-          origin: string
-        }
-      }[]
-    }[]
-  }[]
+    packages: PackageMetadata[]
+  }
+
+interface RecipeMetadata {
+  revisions: RecipeRevisionMetadata[]
 }
 
-namespace RootMetadata {
-  export function serialize(metadata: RootMetadata): string {
+namespace RecipeMetadata {
+  export function serialize(metadata: RecipeMetadata): string {
     return (
       '<!--redirectory\n' +
       'Do not edit or remove this comment.\n' +
@@ -228,7 +237,7 @@ class RootRelease {
       upload_url: string
       assets: { id: number; name: string; browser_download_url: string }[]
     },
-    public conan: RootMetadata,
+    public conan: RecipeMetadata,
     private prefix: string,
     private suffix: string,
   ) {}
@@ -239,7 +248,7 @@ class RootRelease {
     { force = false } = {},
   ): Promise<RootRelease> {
     let github
-    let conan: RootMetadata = {
+    let conan: RecipeMetadata = {
       revisions: [{ revision: '0', time: nowString(), packages: [] }],
     }
     // If the body is entirely an HTML comment, GitHub will show it.
@@ -265,7 +274,7 @@ class RootRelease {
         owner: params.owner,
         repo: params.repo,
         tag_name: params.root.tag,
-        body: prefix + RootMetadata.serialize(conan),
+        body: prefix + RecipeMetadata.serialize(conan),
       })
       if (r2.status !== 201) {
         throw new HttpError(r2.status, r2.data.body)
@@ -299,7 +308,7 @@ class RootRelease {
   }
 
   async save() {
-    const body = this.prefix + RootMetadata.serialize(this.conan) + this.suffix
+    const body = this.prefix + RecipeMetadata.serialize(this.conan) + this.suffix
     const r1 = await this.octokit.rest.repos.updateRelease({
       owner: this.params.owner,
       repo: this.params.repo,
@@ -370,8 +379,13 @@ router.get('/:api/users/check_credentials', async (req, res) => {
   return res.send(user)
 })
 
+router.get(`${PATHS.reference}`, async (req, res) => {
+  // Return 404 if there are no revisions.
+  // Return 200 and {filename: digest, ...} if there is.
+})
+
 router.get(`${PATHS.reference}/latest`, async (req, res) => {
-  const params = parseRelease(req)
+  const params = parseParams(req)
   const { user, auth } = parseBearer(req)
   const octokit = newOctokit({ auth })
   const root = await RootRelease.open(octokit, params)
@@ -383,7 +397,7 @@ router.get(`${PATHS.reference}/latest`, async (req, res) => {
 })
 
 router.get(`${PATHS.reference}/revisions`, async (req, res) => {
-  const params = parseRelease(req)
+  const params = parseParams(req)
   const { user, auth } = parseBearer(req)
   const octokit = newOctokit({ auth })
   const root = await RootRelease.open(octokit, params)
@@ -399,7 +413,7 @@ router.get(`${PATHS.reference}/revisions`, async (req, res) => {
 })
 
 router.get(`${PATHS.reference}/download_urls`, async (req, res) => {
-  const params = parseRelease(req)
+  const params = parseParams(req)
   const { user, auth } = parseBearer(req)
   const octokit = newOctokit({ auth })
   const root = await RootRelease.open(octokit, params)
@@ -415,8 +429,52 @@ router.get(`${PATHS.pkgid}/download_urls`, (req, res) => {
   return res.status(501).send()
 })
 
+router.delete(`${PATHS.reference}`, async (req, res) => {
+  const params = parseParams(req)
+  const { user, auth } = parseBearer(req)
+  const octokit = newOctokit({ auth })
+  const root = await RootRelease.open(octokit, params)
+
+  for (const recipe of root.conan.revisions) {
+    for (const pkg of recipe.packages) {
+      for (const build of pkg.revisions) {
+        await octokit.rest.repos.deleteRelease({
+          owner: params.owner,
+          repo: params.repo,
+          release_id: build.release.id,
+        })
+      }
+    }
+    if (recipe.revision === '0') {
+      // We should never delete the root release, even if we created it.
+      // We should still delete the special assets.
+      for (const asset of root.github.assets) {
+        // TODO: Filter for special assets.
+        await octokit.rest.repos.deleteReleaseAsset({
+          owner: params.owner,
+          repo: params.repo,
+          asset_id: asset.id,
+        })
+        // TODO: Handle error.
+      }
+    } else {
+      await octokit.rest.repos.deleteRelease({
+        owner: params.owner,
+        repo: params.repo,
+        release_id: recipe.release.id,
+      })
+      // TODO: Handle error.
+    }
+  }
+
+  root.conan.revisions = []
+  await root.save()
+
+  return res.send()
+})
+
 router.delete(`${PATHS.rrev}`, async (req, res) => {
-  const params = parseRelease(req)
+  const params = parseParams(req)
   const { user, auth } = parseBearer(req)
   const octokit = newOctokit({ auth })
   const root = await RootRelease.open(octokit, params)
@@ -469,7 +527,7 @@ router.get(`${PATHS.rrev}/files`, getFiles)
 router.get(`${PATHS.rrev}/files/:filename`, getFile)
 
 router.put(`${PATHS.rrev}/files/:filename`, async (req, res) => {
-  const params = parseRelease(req)
+  const params = parseParams(req)
   const { owner, repo, rrev } = params
   const { user, auth } = parseBearer(req)
   const octokit = newOctokit({ auth })
@@ -541,7 +599,7 @@ router.put(`${PATHS.rrev}/files/:filename`, async (req, res) => {
 })
 
 router.delete(`${PATHS.rrev}/packages`, async (req, res) => {
-  const params = parseRelease(req)
+  const params = parseParams(req)
   const { user, auth } = parseBearer(req)
   const octokit = newOctokit({ auth })
   const root = await RootRelease.open(octokit, params)
@@ -569,7 +627,7 @@ router.delete(`${PATHS.rrev}/packages`, async (req, res) => {
 })
 
 router.get(`${PATHS.pkgid}/latest`, async (req, res) => {
-  const params = parseRelease(req)
+  const params = parseParams(req)
   const { user, auth } = parseBearer(req)
   const octokit = newOctokit({ auth })
   const root = await RootRelease.open(octokit, params)
@@ -590,7 +648,7 @@ router.get(`${PATHS.prev}/files`, getFiles)
 router.get(`${PATHS.prev}/files/:filename`, getFile)
 
 router.put(`${PATHS.prev}/files/:filename`, async (req, res) => {
-  const params = parseRelease(req)
+  const params = parseParams(req)
   const { repo, tag, owner } = params
   const { user, auth } = parseBearer(req)
   const octokit = newOctokit({ auth })
