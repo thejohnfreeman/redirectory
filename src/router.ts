@@ -10,18 +10,26 @@ function nowString() {
   return new Date().toISOString()
 }
 
-function maxBy<T, U>(xs: T[], f: (x: T) => U): T {
+interface Item<T> {
+  value: T,
+  index: number,
+}
+
+function maxBy<T, K>(xs: T[], f: (x: T) => K): Item<T> {
   assert(xs.length > 0)
-  let choice = xs[0]
-  let k = f(choice)
+  let index = 0;
+  let value = xs[0]
+  let key = f(value)
   for (let i = 1; i < xs.length; ++i) {
     const xi = xs[i]
     const ki = f(xi)
-    if (ki > k) {
-      choice = xi
+    if (ki > key) {
+      index = i
+      value = xi
+      key = ki
     }
   }
-  return choice
+  return { value, index }
 }
 
 const MIME_TYPES = {
@@ -99,6 +107,74 @@ type ReleaseParameters = {
   [key: string]: any
 }
 
+interface RecipeParameters {
+  name: string
+  version: string
+  user: string
+  channel: string
+  reference: string
+}
+
+interface RecipeRevisionParameters extends RecipeParameters {
+  rrev: string
+}
+
+interface PackageParameters extends RecipeRevisionParameters {
+  pid: string
+}
+
+interface PackageRevisionParamaters extends PackageParameters {
+  prev: string
+}
+
+// TODO: Rename (host, owner) to (user, channel).
+// TODO: Introduce host !== 'github' => tag = channel.
+function parseRecipeParameters(req: express.Request): RecipeParameters {
+  const name = req.params.package
+  const version = req.params.version
+  const user = req.params.host
+  const channel = req.params.owner
+  const reference = `${name}/${version}@${user}/${channel}`
+  if (user !== 'github') {
+    throw new Forbidden(`Not a GitHub package: '${reference}'`)
+  }
+  return { name, version, user, channel, reference }
+}
+
+function parseReleaseParameters(req: express.Request): ReleaseParameters {
+  const repo = req.params.package
+  const version = req.params.version
+  const host = req.params.host
+  const owner = req.params.owner
+  const rrev = req.params.rrev
+  const pkgid = req.params.pkgid
+  const prev = req.params.prev
+
+  let tag = version
+  let reference = `${repo}/${version}@${host}/${owner}`
+  if (rrev && rrev !== '0') {
+    tag += '#' + rrev
+    reference += '#' + rrev
+  }
+  if (pkgid) {
+    // `:` is not valid in a Git tag name.
+    // Two tags cannot coexist when one is a prefix of the other,
+    // followed immediately by a directory separator (`/`).
+    tag += '@' + pkgid
+    reference += ':' + pkgid
+    if (prev) {
+      tag += '#' + prev
+      reference += '#' + prev
+    }
+  }
+
+  if (host !== 'github') {
+    throw new Forbidden(`Not a GitHub package: '${reference}'`)
+  }
+
+  return { repo, tag, owner, reference }
+}
+
 function parseParams(req): ReleaseParameters {
   const repo = req.params.package
   const root: any = {}
@@ -140,10 +216,10 @@ function parseParams(req): ReleaseParameters {
 }
 
 /** Return a list of asset names for the requested release. */
-async function getFiles(req, res) {
+async function getFiles(req: express.Request, res) {
   const { repo, tag, owner, reference } = parseParams(req)
 
-  const { user, auth } = parseBearer(req)
+  const { auth } = parseBearer(req)
   const octokit = newOctokit({ auth })
 
   const r1 = await octokit.rest.repos.getReleaseByTag({
@@ -152,7 +228,7 @@ async function getFiles(req, res) {
     tag,
   })
   if (r1.status !== 200) {
-    return res.status(404).send(`Recipe not found: ${reference}`)
+    throw new NotFound(`Recipe not found: ${reference}`)
   }
 
   const files = {}
@@ -163,10 +239,10 @@ async function getFiles(req, res) {
 }
 
 /** Return a redirect for the requested file. */
-function getFile(req, res) {
-  const { repo, tag, owner } = parseParams(req)
+function getFile(req: express.Request, res) {
+  const { repo, tag, owner } = parseReleaseParameters(req)
   const filename = req.params.filename
-  // TODO: Do we need to look up the download URL or can we assume its form?
+  // It seems we can assume the download URL.
   return res.redirect(
     301,
     `https://github.com/${owner}/${repo}/releases/download/${encodeURIComponent(tag)}/${filename}`,
@@ -323,9 +399,107 @@ class RootRelease {
   }
 }
 
+class RecipeDatabase {
+  constructor(
+    private octokit: Octokit,
+    public readonly rparams: RecipeParameters,
+    public root: RootRelease,
+  ) {}
+
+  static async open(
+    req: express.Request,
+    { force = false } = {},
+  ): Promise<RecipeDatabase> {
+    const rparams = parseRecipeParameters(req)
+    const { auth } = parseBearer(req)
+    const octokit = newOctokit({ auth })
+    const root = await RootRelease.open(
+      octokit,
+      { owner: rparams.channel, repo: rparams.name, tag: rparams.version },
+      { force },
+    )
+    return new RecipeDatabase(octokit, rparams, root)
+  }
+
+  getLatestRevision(type: string, md: RecipeMetadata): Item<RecipeRevisionMetadata>
+  getLatestRevision(type: string, md: PackageMetadata): Item<PackageRevisionMetadata>
+  getLatestRevision(type: string, md) {
+    if (md.revisions.length === 0) {
+      throw new NotFound(`${type} not found: ${this.rparams.reference}`)
+    }
+    return maxBy(md.revisions, ({ time }) => time)
+  }
+
+  getRecipeRevision(md: RecipeMetadata, rrev: string): Item<RecipeRevisionMetadata> {
+    const index = md.revisions.findIndex((r) => r.revision === rrev)
+    if (index < 0) {
+      throw new NotFound(`Revision not found: ${this.rparams.reference}#${rrev}`)
+    }
+    return { value: md.revisions[index], index }
+  }
+
+  getPackage(md: RecipeRevisionMetadata, pid: string): Item<PackageMetadata> {
+    const index = md.packages.findIndex(p => p.id === pid)
+    if (index < 0) {
+      // TODO: Add `reference` to `Item`.
+      throw new NotFound(`Package not found: ${this.rparams.reference}:${pid}`)
+    }
+    return { value: md.packages[index], index }
+  }
+
+  // TODO: Rethink references.
+  getPackageRevision(md: PackageMetadata, prev: string): Item<PackageRevisionMetadata> {
+    const index = md.revisions.findIndex((p) => p.revision === prev)
+    if (index < 0) {
+      throw new NotFound(`Revision not found: ${this.rparams.reference}#${prev}`)
+    }
+    return { value: md.revisions[index], index }
+  }
+
+  async deletePackages($rrev: RecipeRevisionMetadata) {
+    for (const $package of $rrev.packages) {
+      for (const $prev of $package.revisions) {
+        await this.octokit.rest.repos.deleteRelease({
+          owner: this.rparams.channel,
+          repo: this.rparams.name,
+          release_id: $prev.release.id,
+        })
+        // TODO: Skip 404, throw !2xx.
+      }
+    }
+  }
+
+  async deleteRecipeRevision($rrev: RecipeRevisionMetadata) {
+    if ($rrev.revision === '0') {
+      // We should never delete the root release, even if we created it.
+      // We should still delete the special assets.
+      for (const asset of this.root.github.assets) {
+        // TODO: Filter for just Conan assets?
+        await this.octokit.rest.repos.deleteReleaseAsset({
+          owner: this.rparams.channel,
+          repo: this.rparams.name,
+          asset_id: asset.id,
+        })
+        // TODO: Skip 404, throw !2xx.
+      }
+    } else {
+      await this.octokit.rest.repos.deleteRelease({
+        owner: this.rparams.channel,
+        repo: this.rparams.name,
+        release_id: $rrev.release.id,
+      })
+      // TODO: Skip 404, throw !2xx.
+    }
+  }
+
+}
+
+
 namespace PATHS {
+  // TODO: Rename to recipe.
   export const reference = '/:api/conans/:package/:version/:host/:owner'
   export const rrev = `${reference}/revisions/:rrev`
+  // TODO: Rename to package.
   export const pkgid = `${rrev}/packages/:pkgid`
   export const prev = `${pkgid}/revisions/:prev`
 }
@@ -385,27 +559,18 @@ router.get(`${PATHS.reference}`, async (req, res) => {
 })
 
 router.get(`${PATHS.reference}/latest`, async (req, res) => {
-  const params = parseParams(req)
-  const { user, auth } = parseBearer(req)
-  const octokit = newOctokit({ auth })
-  const root = await RootRelease.open(octokit, params)
-  if (root.conan.revisions.length === 0) {
-    return res.status(404).send(`Recipe not found: ${params.reference}`)
-  }
-  const { revision, time } = maxBy(root.conan.revisions, ({ time }) => time)
+  const db = await RecipeDatabase.open(req)
+  const { revision, time } = db.getLatestRevision('Recipe', db.root.conan).value
   return res.send({ revision, time })
 })
 
 router.get(`${PATHS.reference}/revisions`, async (req, res) => {
-  const params = parseParams(req)
-  const { user, auth } = parseBearer(req)
-  const octokit = newOctokit({ auth })
-  const root = await RootRelease.open(octokit, params)
-  if (root.conan.revisions.length === 0) {
-    return res.status(404).send(`Recipe not found: '${params.reference}'`)
+  const db = await RecipeDatabase.open(req)
+  if (db.root.conan.revisions.length === 0) {
+    throw new NotFound(`Recipe not found: '${db.rparams.reference}'`)
   }
   return res.send({
-    revisions: root.conan.revisions.map(({ revision, time }) => ({
+    revisions: db.root.conan.revisions.map(({ revision, time }) => ({
       revision,
       time,
     })),
@@ -413,12 +578,9 @@ router.get(`${PATHS.reference}/revisions`, async (req, res) => {
 })
 
 router.get(`${PATHS.reference}/download_urls`, async (req, res) => {
-  const params = parseParams(req)
-  const { user, auth } = parseBearer(req)
-  const octokit = newOctokit({ auth })
-  const root = await RootRelease.open(octokit, params)
+  const db = await RecipeDatabase.open(req)
   const data = {}
-  for (const asset of root.github.assets) {
+  for (const asset of db.root.github.assets) {
     data[asset.name] = asset.browser_download_url
   }
   return res.send(data)
@@ -430,94 +592,26 @@ router.get(`${PATHS.pkgid}/download_urls`, (req, res) => {
 })
 
 router.delete(`${PATHS.reference}`, async (req, res) => {
-  const params = parseParams(req)
-  const { user, auth } = parseBearer(req)
-  const octokit = newOctokit({ auth })
-  const root = await RootRelease.open(octokit, params)
+  const db = await RecipeDatabase.open(req)
 
-  for (const recipe of root.conan.revisions) {
-    for (const pkg of recipe.packages) {
-      for (const build of pkg.revisions) {
-        await octokit.rest.repos.deleteRelease({
-          owner: params.owner,
-          repo: params.repo,
-          release_id: build.release.id,
-        })
-      }
-    }
-    if (recipe.revision === '0') {
-      // We should never delete the root release, even if we created it.
-      // We should still delete the special assets.
-      for (const asset of root.github.assets) {
-        // TODO: Filter for special assets.
-        await octokit.rest.repos.deleteReleaseAsset({
-          owner: params.owner,
-          repo: params.repo,
-          asset_id: asset.id,
-        })
-        // TODO: Handle error.
-      }
-    } else {
-      await octokit.rest.repos.deleteRelease({
-        owner: params.owner,
-        repo: params.repo,
-        release_id: recipe.release.id,
-      })
-      // TODO: Handle error.
-    }
+  for (const $rrev of db.root.conan.revisions) {
+    db.deletePackages($rrev)
+    db.deleteRecipeRevision($rrev)
   }
-
-  root.conan.revisions = []
-  await root.save()
+  db.root.conan.revisions = []
+  await db.root.save()
 
   return res.send()
 })
 
 router.delete(`${PATHS.rrev}`, async (req, res) => {
-  const params = parseParams(req)
-  const { user, auth } = parseBearer(req)
-  const octokit = newOctokit({ auth })
-  const root = await RootRelease.open(octokit, params)
-  const index = root.conan.revisions.findIndex(
-    (r) => r.revision === params.rrev,
-  )
-  // TODO: Handle missing revision.
-  const recipe = root.conan.revisions[index]
+  const db = await RecipeDatabase.open(req)
+  const rrev = req.params.rrev
+  const item = db.getRecipeRevision(db.root.conan, rrev)
 
-  if (params.rrev === '0') {
-    // We should never delete the root release, even if we created it.
-    // We should still delete the special assets.
-    for (const asset of root.github.assets) {
-      // TODO: Filter for special assets.
-      await octokit.rest.repos.deleteReleaseAsset({
-        owner: params.owner,
-        repo: params.repo,
-        asset_id: asset.id,
-      })
-      // TODO: Handle error.
-    }
-  } else {
-    await octokit.rest.repos.deleteRelease({
-      owner: params.owner,
-      repo: params.repo,
-      release_id: recipe.release.id,
-    })
-    // TODO: Handle error.
-  }
-
-  for (const pkg of recipe.packages) {
-    for (const build of pkg.revisions) {
-      await octokit.rest.repos.deleteRelease({
-        owner: params.owner,
-        repo: params.repo,
-        release_id: build.release.id,
-      })
-    }
-    // TODO: Handle errors.
-  }
-
-  root.conan.revisions.splice(index, 1)
-  await root.save()
+  db.deleteRecipeRevision(item.value)
+  db.root.conan.revisions.splice(item.index, 1)
+  await db.root.save()
 
   return res.send()
 })
@@ -599,47 +693,24 @@ router.put(`${PATHS.rrev}/files/:filename`, async (req, res) => {
 })
 
 router.delete(`${PATHS.rrev}/packages`, async (req, res) => {
-  const params = parseParams(req)
-  const { user, auth } = parseBearer(req)
-  const octokit = newOctokit({ auth })
-  const root = await RootRelease.open(octokit, params)
+  const db = await RecipeDatabase.open(req)
+  const rrev = req.params.rrev
+  const $rrev = db.getRecipeRevision(db.root.conan, rrev).value
 
-  const { rrev } = params
-  let recipe = root.conan.revisions.find(r => r.revision === rrev)
-  if (!recipe) {
-    return res.send()
-  }
-
-  for (const pkg of recipe.packages) {
-    for (const build of pkg.revisions) {
-      await octokit.rest.repos.deleteRelease({
-        owner: params.owner,
-        repo: params.repo,
-        release_id: build.release.id,
-      })
-    }
-  }
-
-  recipe.packages = []
-  await root.save()
+  db.deletePackages($rrev)
+  $rrev.packages = []
+  await db.root.save()
 
   return res.send()
 })
 
 router.get(`${PATHS.pkgid}/latest`, async (req, res) => {
-  const params = parseParams(req)
-  const { user, auth } = parseBearer(req)
-  const octokit = newOctokit({ auth })
-  const root = await RootRelease.open(octokit, params)
-  const recipe = root.conan.revisions.find(r => r.revision === params.rrev)
-  if (!recipe) {
-    return res.status(404).send(`Recipe not found: ${params.reference}`)
-  }
-  const pkg = recipe.packages.find(p => p.id === params.pkgid)
-  if (!pkg) {
-    return res.status(404).send(`Package not found: ${params.reference}`)
-  }
-  const { revision, time } = maxBy(pkg.revisions, ({ time }) => time)
+  const db = await RecipeDatabase.open(req)
+  const rrev = req.params.rrev
+  const pid = req.params.pkgid
+  const $rrev = db.getRecipeRevision(db.root.conan, rrev).value
+  const $package = db.getPackage($rrev, pid).value
+  const { revision, time } = db.getLatestRevision('Package', $package).value
   return res.send({ revision, time })
 })
 
