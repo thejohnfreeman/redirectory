@@ -1,5 +1,4 @@
 import express from 'express'
-import path from 'path'
 import { parseBearer } from './octokit.js'
 import * as controllers from './controllers.js'
 import * as http from './http.js'
@@ -67,10 +66,12 @@ router.get   (`${PATHS.$recipe}/revisions`    , controllers.getRecipeRevisions)
 router.delete(`${PATHS.$rrev}`                , controllers.deleteRecipeRevision)
 router.get   (`${PATHS.$rrev}/files`          , controllers.getRecipeRevisionFiles)
 router.get   (`${PATHS.$rrev}/files/:filename`, controllers.getRecipeRevisionFile)
+router.put   (`${PATHS.$rrev}/files/:filename`, controllers.putRecipeRevisionFile)
 router.delete(`${PATHS.$rrev}/packages`       , controllers.deleteRecipeRevisionPackages)
 router.get   (`${PATHS.$package}/latest`      , controllers.getPackageLatest)
 router.get   (`${PATHS.$prev}/files`          , controllers.getPackageRevisionFiles)
 router.get   (`${PATHS.$prev}/files/:filename`, controllers.getPackageRevisionFile)
+router.put   (`${PATHS.$prev}/files/:filename`, controllers.putPackageRevisionFile)
 
 router.all('*', (req, res) => {
   console.log(req.method, req.originalUrl)

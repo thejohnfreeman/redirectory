@@ -4,23 +4,38 @@ function mapObject(object, fn) {
   return Object.fromEntries(Object.entries(object).map(([k, v]) => [k, fn(v)]))
 }
 
-function getLatest(resource, res) {
-  const $rev = model.getLatestRevision(resource)
+const getLatest = (getRevisible) => async (req, res) => {
+  const { db, $resource: $revisible } = await getRevisible(req)
+  const $rev = model.getLatestRevision($revisible)
   const { id, time } = $rev.value
   res.send({ revision: id, time })
 }
 
-async function getFiles(
-  db: model.Database, resource: model.Resource<model.Revision>, res,
-) {
-  const release = await model.getRelease(db, resource)
-  const files = await model.getFiles(db, resource.level, release)
+const getFile = (getRevision) => async (req, res) => {
+  // TODO: Do not open the database. Just parse the parameters.
+  const { db, $resource: $rev } = await getRevision(req)
+  const url = model.getFile(db, $rev, req.params.filename)
+  return res.redirect(301, url)
+}
+
+const getFiles = (getRevision) => async (req, res) => {
+  const { db, $resource: $rev } = await getRevision(req)
+  const release = await model.getRelease(db, $rev)
+  const files = await model.getFiles(db, $rev.level, release)
   const body = mapObject(files, () => ({}))
   res.send(body)
 }
 
+const putRevisionFile = (getRevision) => async (req, res) => {
+  const { db, $resource: $rev } = await getRevision(req, /*force=*/true)
+  const release = await model.getRelease(db, $rev)
+  const r = await model.putFile(db, release, req)
+  // Should be 201.
+  return res.status(r.status).send()
+}
+
 export async function getRecipe(req, res) {
-  const { db, $recipe } = await model.getRecipe(req)
+  const { db, $resource: $recipe } = await model.getRecipe(req)
   const $rrev = model.getLatestRevision($recipe)
   const release = await model.getRelease(db, $rrev)
   const files = await model.getFiles(db, $rrev.level, release)
@@ -29,7 +44,7 @@ export async function getRecipe(req, res) {
 }
 
 export async function deleteRecipe(req, res) {
-  const { db, $recipe } = await model.getRecipe(req)
+  const { db, $resource: $recipe } = await model.getRecipe(req)
 
   await Promise.all(model.deleteRecipe(db.client, $recipe.value))
   $recipe.value.revisions = []
@@ -38,19 +53,16 @@ export async function deleteRecipe(req, res) {
   return res.send()
 }
 
-export async function getRecipeLatest(req, res) {
-  const { db, $recipe } = await model.getRecipe(req)
-  return getLatest($recipe, res)
-}
+export const getRecipeLatest = getLatest(model.getRecipe)
 
 export async function getRecipeRevisions(req, res) {
-  const { db, $recipe } = await model.getRecipe(req)
+  const { db, $resource: $recipe } = await model.getRecipe(req)
   const revisions = model.getRevisions($recipe)
   res.send(revisions)
 }
 
 export async function deleteRecipeRevision(req, res) {
-  const { db, $rrev } = await model.getRecipeRevision(req)
+  const { db, $resource: $rrev } = await model.getRecipeRevision(req)
 
   await Promise.all(model.deleteRecipeRevision(db.client, $rrev.value))
   $rrev.siblings.splice($rrev.index, 1)
@@ -59,20 +71,12 @@ export async function deleteRecipeRevision(req, res) {
   return res.send()
 }
 
-export async function getRecipeRevisionFiles(req, res) {
-  const { db, $rrev } = await model.getRecipeRevision(req)
-  return getFiles(db, $rrev, res)
-}
-
-export async function getRecipeRevisionFile(req, res) {
-  // TODO: Do not open the database. Just parse the parameters.
-  const { db, $rrev } = await model.getRecipeRevision(req)
-  const url = model.getFile(db, $rrev, req.params.filename)
-  return res.redirect(301, url)
-}
+export const getRecipeRevisionFiles = getFiles(model.getRecipeRevision)
+export const getRecipeRevisionFile = getFile(model.getRecipeRevision)
+export const putRecipeRevisionFile = putRevisionFile(model.getRecipeRevision)
 
 export async function deleteRecipeRevisionPackages(req, res) {
-  const { db, $rrev } = await model.getRecipeRevision(req)
+  const { db, $resource: $rrev } = await model.getRecipeRevision(req)
 
   await Promise.all(model.deletePackages(db.client, $rrev.value))
   $rrev.value.packages = []
@@ -81,19 +85,8 @@ export async function deleteRecipeRevisionPackages(req, res) {
   return res.send()
 }
 
-export async function getPackageLatest(req, res) {
-  const { db, $package } = await model.getPackage(req)
-  return getLatest($package, res)
-}
+export const getPackageLatest = getLatest(model.getPackage)
 
-export async function getPackageRevisionFiles(req, res) {
-  const { db, $prev } = await model.getPackageRevision(req)
-  return getFiles(db, $prev, res)
-}
-
-export async function getPackageRevisionFile(req, res) {
-  // TODO: Do not open the database. Just parse the parameters.
-  const { db, $prev } = await model.getPackageRevision(req)
-  const url = model.getFile(db, $prev, req.params.filename)
-  return res.redirect(301, url)
-}
+export const getPackageRevisionFiles = getFiles(model.getPackageRevision)
+export const getPackageRevisionFile = getFile(model.getPackageRevision)
+export const putPackageRevisionFile = putRevisionFile(model.getPackageRevision)

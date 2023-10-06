@@ -1,4 +1,5 @@
 import express from 'express'
+import path from 'path'
 import * as http from './http.js'
 import { Client } from './octokit.js'
 import * as std from './stdlib.js'
@@ -95,7 +96,7 @@ function reviseLevel(level: Level, id: string) {
 }
 
 export async function getRecipe(req: express.Request, force = false):
-  Promise<{ db: Database, $recipe: Resource<Recipe> }>
+  Promise<{ db: Database, $resource: Resource<Recipe> }>
 {
     const client = Client.new(req)
 
@@ -162,7 +163,7 @@ export async function getRecipe(req: express.Request, force = false):
     const db = { client, root }
     const $recipe = { level, value }
 
-    return { db, $recipe }
+    return { db, $resource: $recipe }
 }
 
 export async function save({ root, client }: Database) {
@@ -189,9 +190,9 @@ function getChild<T extends { id: string }>(
 }
 
 export async function getRecipeRevision(req: express.Request, force = false):
-  Promise<{ db: Database, $rrev: Removable<RecipeRevision> }>
+  Promise<{ db: Database, $resource: Removable<RecipeRevision> }>
 {
-  const { db, $recipe } = await getRecipe(req, force)
+  const { db, $resource: $recipe } = await getRecipe(req, force)
   const id = req.params.rrev
   const level = reviseLevel($recipe.level, id)
   const siblings = $recipe.value.revisions
@@ -201,13 +202,13 @@ export async function getRecipeRevision(req: express.Request, force = false):
     packages: [],
   })
   const $rrev = { level, value, siblings, index }
-  return { db, $rrev }
+  return { db, $resource: $rrev }
 }
 
 export async function getPackage(req: express.Request, force = false):
-  Promise<{ db: Database, $package: Removable<Package> }>
+  Promise<{ db: Database, $resource: Removable<Package> }>
 {
-  const { db, $rrev } = await getRecipeRevision(req, force)
+  const { db, $resource: $rrev } = await getRecipeRevision(req, force)
   const id = this.req.params.package
   if (id === '0') {
     throw http.badRequest(`invalid package ID: ${id}`)
@@ -222,13 +223,13 @@ export async function getPackage(req: express.Request, force = false):
     revisions: [],
   })
   const $package = { level, value, siblings, index }
-  return { db, $package }
+  return { db, $resource: $package }
 }
 
 export async function getPackageRevision(req: express.Request, force = false):
-  Promise<{ db: Database, $prev: Removable<PackageRevision> }>
+  Promise<{ db: Database, $resource: Removable<PackageRevision> }>
 {
-  const { db, $package } = await getPackage(req, force)
+  const { db, $resource: $package } = await getPackage(req, force)
   const id = this.req.params.prev
   const level = reviseLevel($package.level, id)
   const siblings = $package.value.revisions
@@ -237,27 +238,27 @@ export async function getPackageRevision(req: express.Request, force = false):
     time: std.nowString(),
   })
   const $prev = { level, value, siblings, index }
-  return { db, $prev }
+  return { db, $resource: $prev }
 }
 
-export function getLatestRevision(resource: Resource<Recipe>): Removable<RecipeRevision>
-export function getLatestRevision(resource: Resource<Package>): Removable<PackageRevision>
-export function getLatestRevision(resource: Resource<Revisible>): Removable<Revision> {
-  const siblings = resource.value.revisions
+export function getLatestRevision($revisible: Resource<Recipe>): Removable<RecipeRevision>
+export function getLatestRevision($revisible: Resource<Package>): Removable<PackageRevision>
+export function getLatestRevision($revisible: Resource<Revisible>): Removable<Revision> {
+  const siblings = $revisible.value.revisions
   if (siblings.length === 0) {
-    throw missing(resource.level)
+    throw missing($revisible.level)
   }
   const { value, index } = std.maxBy(siblings, (revision) => revision.time)
-  const level = reviseLevel(resource.level, value.id)
+  const level = reviseLevel($revisible.level, value.id)
   return { level, value, siblings, index }
 }
 
-export function getRevisions(resource: Resource<Recipe>): { revision: string, time: string }[]
-export function getRevisions(resource: Resource<Package>): { revision: string, time: string }[]
-export function getRevisions(resource: Resource<Revisible>): { revision: string, time: string }[] {
-  const siblings = resource.value.revisions
+export function getRevisions($revisible: Resource<Recipe>): { revision: string, time: string }[]
+export function getRevisions($revisible: Resource<Package>): { revision: string, time: string }[]
+export function getRevisions($revisible: Resource<Revisible>): { revision: string, time: string }[] {
+  const siblings = $revisible.value.revisions
   if (siblings.length === 0) {
-    throw missing(resource.level)
+    throw missing($revisible.level)
   }
   return siblings.map(({ id, time }) => ({
     revision: id,
@@ -266,19 +267,19 @@ export function getRevisions(resource: Resource<Revisible>): { revision: string,
 }
 
 export async function getRelease(
-  db: Database, resource: Resource<Revision>, force = false,
+  db: Database, $revision: Resource<Revision>, force = false,
 ): Promise<Release> {
-  let release = resource.value.release
+  let release = $revision.value.release
   if (!release) {
     let data: { id: number, upload_url: string }
-    if (resource.value.id === '0' && resource.level.type === 'Recipe') {
+    if ($revision.value.id === '0' && $revision.level.type === 'Recipe') {
       data = db.root.release
     } else if (!force) {
-      throw http.notFound(`Missing release: ${resource.level.reference}`)
+      throw http.notFound(`Missing release: ${$revision.level.reference}`)
     } else {
-      const r1 = await db.client.createRelease(resource.level.tag)
+      const r1 = await db.client.createRelease($revision.level.tag)
       if (r1.status !== 201) {
-        throw http.badGateway(`Cannot create release: ${resource.level.reference}`)
+        throw http.badGateway(`Cannot create release: ${$revision.level.reference}`)
       }
       data = r1.data
     }
@@ -286,7 +287,7 @@ export async function getRelease(
       id: data.id,
       origin: new URL(data.upload_url).origin,
     }
-    resource.value.release = release
+    $revision.value.release = release
   }
   return release
 }
@@ -314,9 +315,31 @@ export async function getFiles({ client }: Database, level: Level, release: Rele
   return files
 }
 
-export function getFile(db: Database, resource: Resource<Revision>, filename: string): string {
+export function getFile(db: Database, $revision: Resource<Revision>, filename: string): string {
   // It seems we can assume the download URL.
-  return `https://github.com/${db.client.owner}/${db.client.repo}/releases/download/${encodeURIComponent(resource.level.tag)}/${filename}`
+  return `https://github.com/${db.client.owner}/${db.client.repo}/releases/download/${encodeURIComponent($revision.level.tag)}/${filename}`
+}
+
+export async function putFile(db: Database, release: Release, req: express.Request) {
+  const { filename } = req.params
+  const extension = path.extname(filename)
+  const mimeType = MIME_TYPES[extension] || 'application/octet-stream'
+
+  return fetch(
+    `${release.origin}/repos/${db.client.owner}/${db.client.repo}/releases/${release.id}/assets?name=${filename}`,
+      {
+      method: 'POST',
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${db.client.auth}`,
+        'Content-Type': mimeType,
+        'Content-Length': req.get('Content-Length'),
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+      duplex: 'half',
+      body: req,
+    } as any,
+  )
 }
 
 export async function deleteRevision(client: Client, revision: Revision) {
