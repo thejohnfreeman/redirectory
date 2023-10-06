@@ -9,33 +9,33 @@ const MIME_TYPES = {
   '.tgz': 'application/gzip',
 }
 
-interface Release {
+export interface Release {
     id: number
     origin: string
 }
 
-interface Revision {
+export interface Revision {
     id: string
     time: string
     // Missing in non-uploaded revisions, and when rrev === '0'.
     release?: Release
 }
 
-interface Revisible<T extends Revision = Revision> {
+export interface Revisible<T extends Revision = Revision> {
     revisions: T[]
 }
 
-interface Recipe extends Revisible<RecipeRevision> { }
+export interface Recipe extends Revisible<RecipeRevision> { }
 
-interface RecipeRevision extends Revision {
+export interface RecipeRevision extends Revision {
     packages: Package[]
 }
 
-interface Package extends Revisible<PackageRevision> {
+export interface Package extends Revisible<PackageRevision> {
     id: string
 }
 
-interface PackageRevision extends Revision { }
+export interface PackageRevision extends Revision { }
 
 namespace Recipe {
   export function serialize($recipe: Recipe): string {
@@ -48,28 +48,28 @@ namespace Recipe {
   }
 }
 
-interface Level {
+export interface Level {
     type: string
     tag: string
     reference: string
 }
 
-interface Resource<T> {
+export interface Resource<T> {
     level: Level
     value: T
 }
 
-interface Removable<T> extends Resource <T> {
+export interface Removable<T> extends Resource <T> {
     siblings: T[]
     index: number
 }
 
-interface Database {
+export interface Database {
     client: Client
     root: Root
 }
 
-interface Root {
+export interface Root {
     reference: string
     release: {
       id: number
@@ -298,7 +298,7 @@ interface Files {
   }
 }
 
-export async function getFiles(client: Client, level: Level, release: Release): Promise<Files> {
+export async function getFiles({ client }: Database, level: Level, release: Release): Promise<Files> {
   const r1 = await client.getRelease(release.id)
   if (r1.status !== 200) {
     throw missing(level)
@@ -312,6 +312,11 @@ export async function getFiles(client: Client, level: Level, release: Release): 
     }
   }
   return files
+}
+
+export function getFile(db: Database, resource: Resource<Revision>, filename: string): string {
+  // It seems we can assume the download URL.
+  return `https://github.com/${db.client.owner}/${db.client.repo}/releases/download/${encodeURIComponent(resource.level.tag)}/${filename}`
 }
 
 export async function deleteRevision(client: Client, revision: Revision) {

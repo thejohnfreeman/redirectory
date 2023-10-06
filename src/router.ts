@@ -60,9 +60,17 @@ router.get('/:api/users/check_credentials', async (req, res) => {
   return res.send(user)
 })
 
-router.get(`${PATHS.$recipe}`, controllers.getRecipe)
-router.delete(`${PATHS.$recipe}`, controllers.deleteRecipe)
-router.delete(`${PATHS.$recipe}/latest`, controllers.getRecipeLatest)
+router.get   (`${PATHS.$recipe}`              , controllers.getRecipe)
+router.delete(`${PATHS.$recipe}`              , controllers.deleteRecipe)
+router.get   (`${PATHS.$recipe}/latest`       , controllers.getRecipeLatest)
+router.get   (`${PATHS.$recipe}/revisions`    , controllers.getRecipeRevisions)
+router.delete(`${PATHS.$rrev}`                , controllers.deleteRecipeRevision)
+router.get   (`${PATHS.$rrev}/files`          , controllers.getRecipeRevisionFiles)
+router.get   (`${PATHS.$rrev}/files/:filename`, controllers.getRecipeRevisionFile)
+router.delete(`${PATHS.$rrev}/packages`       , controllers.deleteRecipeRevisionPackages)
+router.get   (`${PATHS.$package}/latest`      , controllers.getPackageLatest)
+router.get   (`${PATHS.$prev}/files`          , controllers.getPackageRevisionFiles)
+router.get   (`${PATHS.$prev}/files/:filename`, controllers.getPackageRevisionFile)
 
 router.all('*', (req, res) => {
   console.log(req.method, req.originalUrl)

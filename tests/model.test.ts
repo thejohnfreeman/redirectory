@@ -17,15 +17,18 @@ function isIsoString(value) {
   expect(Date.parse(value)).not.toBeNaN()
 }
 
-const req = {
+const fakeRequest = (params = {}) => ({
   get: (header) => bearer,
   params: {
     name: repo,
     version: tag,
     user: 'github',
     channel: owner,
+    ...params,
   }
-}
+})
+
+const fakeResponse = () => ({ send: jest.fn(), redirect: jest.fn() })
 
 test('octokit', async () => {
   const r = await kit.rest.repos.getReleaseByTag({ owner, repo, tag })
@@ -33,13 +36,14 @@ test('octokit', async () => {
 })
 
 test('GET /:recipe', async () => {
-  const res = { send: jest.fn() }
+  const req = fakeRequest()
+  const res = fakeResponse()
   await controllers.getRecipe(req, res)
   expect(res.send).toBeCalledWith({
-    'conanfile.py': {},
-    'conanmanifest.txt': {},
-    'conan_export.tgz': {},
-    'conan_sources.tgz': {},
+    'conanfile.py': '',
+    'conanmanifest.txt': '',
+    'conan_export.tgz': '',
+    'conan_sources.tgz': '',
   })
 })
 
@@ -49,13 +53,36 @@ const expectRevision = {
 }
 
 test('GET /:recipe/latest', async () => {
-  const res = { send: jest.fn() }
+  const req = fakeRequest()
+  const res = fakeResponse()
   await controllers.getRecipeLatest(req, res)
   expect(res.send).toBeCalledWith(expectRevision)
 })
 
 test('GET /:recipe/revisions', async () => {
-  const res = { send: jest.fn() }
+  const req = fakeRequest()
+  const res = fakeResponse()
   await controllers.getRecipeRevisions(req, res)
   expect(res.send).toBeCalledWith(expect.toBeArrayOf(expectRevision))
+})
+
+test('GET /:rrev/files', async () => {
+  const req = fakeRequest({ rrev: '0' })
+  const res = fakeResponse()
+  await controllers.getRecipeRevisionFiles(req, res)
+  expect(res.send).toBeCalledWith({
+    'conanfile.py': {},
+    'conanmanifest.txt': {},
+    'conan_export.tgz': {},
+    'conan_sources.tgz': {},
+  })
+})
+
+test('GET /:rrev/file/:filename', async () => {
+  const req = fakeRequest({ rrev: '0', filename: 'conanmanifest.txt' })
+  const res = fakeResponse()
+  await controllers.getRecipeRevisionFile(req, res)
+  expect(res.redirect).toBeCalledWith(
+    301, expect.stringMatching(/^https:\/\/github.com\//),
+  )
 })
