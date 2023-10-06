@@ -8,7 +8,7 @@
     "start": "node dist/serve.js",
     "build": "tsc",
     "format": "prettier src --write",
-    "test": "true"
+    "test": "jest"
   },
   "author": "John Freeman <jfreeman08@gmail.com>",
   "license": "ISC",
@@ -19,8 +19,12 @@
     "winston": "^3.10.0"
   },
   "devDependencies": {
+    "@types/jest": "^29.5.5",
     "@types/node": "^20.4.6",
+    "expect-more-jest": "^5.5.0",
+    "jest": "^29.7.0",
     "prettier": "^3.0.1",
+    "ts-jest": "^29.1.1",
     "typescript": "^5.1.6"
   }
 }

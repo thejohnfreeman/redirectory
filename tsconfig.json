@@ -1,8 +1,10 @@
 {
   "include": ["src/**/*.ts"],
   "compilerOptions": {
-    "module": "node16",
-    "types": ["node"],
+    "esModuleInterop": true,
+    "module": "es2020",
+    "moduleResolution": "bundler",
+    "types": ["node", "jest"],
     "outDir": "dist"
   }
 }
