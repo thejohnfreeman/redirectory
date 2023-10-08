@@ -1,5 +1,6 @@
 import 'expect-more-jest'
 import { readFileSync } from 'fs'
+import { Readable } from 'stream'
 import { Octokit } from 'octokit'
 import * as controllers from '../src/controllers.js'
 
@@ -17,16 +18,24 @@ function isIsoString(value) {
   expect(Date.parse(value)).not.toBeNaN()
 }
 
-const fakeRequest = (params = {}) => ({
-  get: (header) => bearer,
-  params: {
+function fakeRequest(
+  { headers = {}, params = {}, body = {} }: {
+    headers?: Record<string, string>,
+    params?: Record<string, string>,
+    body?: any,
+  } = {}
+) {
+  body.headers = { 'Authorization': bearer, ...headers }
+  body.get = function (header) { return this.headers[header] }
+  body.params = {
     name: repo,
     version: tag,
     user: 'github',
     channel: owner,
     ...params,
   }
-})
+  return body
+}
 
 const fakeResponse = () => ({ send: jest.fn(), redirect: jest.fn() })
 
@@ -67,7 +76,7 @@ test('GET /:recipe/revisions', async () => {
 })
 
 test('GET /:rrev/files', async () => {
-  const req = fakeRequest({ rrev: '0' })
+  const req = fakeRequest({ params: { rrev: '0' } })
   const res = fakeResponse()
   await controllers.getRecipeRevisionFiles(req, res)
   expect(res.send).toBeCalledWith({
@@ -79,10 +88,21 @@ test('GET /:rrev/files', async () => {
 })
 
 test('GET /:rrev/file/:filename', async () => {
-  const req = fakeRequest({ rrev: '0', filename: 'conanmanifest.txt' })
+  const req = fakeRequest({ params: { rrev: '0', filename: 'conanmanifest.txt' } })
   const res = fakeResponse()
   await controllers.getRecipeRevisionFile(req, res)
   expect(res.redirect).toBeCalledWith(
     301, expect.stringMatching(/^https:\/\/github.com\//),
   )
+})
+
+test.only('PUT /:rrev/file/:filename', async () => {
+  const req = fakeRequest({
+    params: { version: '0.1.2', rrev: '1', filename: 'one.txt' },
+    body: Readable.from(['111'])
+  })
+  const res = fakeResponse()
+  try {
+    await controllers.putRecipeRevisionFile(req, res)
+  }
 })
