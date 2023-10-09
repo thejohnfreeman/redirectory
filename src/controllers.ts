@@ -28,7 +28,7 @@ const getFiles = (getRevision) => async (req, res) => {
 
 const putRevisionFile = (getRevision) => async (req, res) => {
   const { db, $resource: $rev } = await getRevision(req, /*force=*/true)
-  const release = await model.getRelease(db, $rev)
+  const release = await model.getRelease(db, $rev, /*force=*/true)
   const r = await model.putFile(db, release, req)
   // Should be 201.
   return res.status(r.status).send()

@@ -37,7 +37,11 @@ function fakeRequest(
   return body
 }
 
-const fakeResponse = () => ({ send: jest.fn(), redirect: jest.fn() })
+const fakeResponse = () => ({
+  send: jest.fn(),
+  status: jest.fn().mockReturnThis(),
+  redirect: jest.fn(),
+})
 
 test('octokit', async () => {
   const r = await kit.rest.repos.getReleaseByTag({ owner, repo, tag })
@@ -96,13 +100,27 @@ test('GET /:rrev/file/:filename', async () => {
   )
 })
 
-test.only('PUT /:rrev/file/:filename', async () => {
+async function deleteReleases(version: string) {
+  const response = await kit.rest.repos.listReleases({ owner, repo })
+  const releases = response.data.filter(
+    ({ tag_name }) => RegExp(`${version}($|[#@])`).test(tag_name)
+  )
+  const ids = releases.map(({ id }) => id)
+  await Promise.all(ids.map(
+    id => kit.rest.repos.deleteRelease({ owner, repo, release_id: id })
+  ))
+}
+
+test('PUT /:rrev/file/:filename', async () => {
+  const version = '0.1.2'
+  await deleteReleases(version)
   const req = fakeRequest({
-    params: { version: '0.1.2', rrev: '1', filename: 'one.txt' },
+    headers: { 'Content-Length': '3' },
+    params: { version, rrev: '1', filename: 'one.txt' },
     body: Readable.from(['111'])
   })
   const res = fakeResponse()
-  try {
-    await controllers.putRecipeRevisionFile(req, res)
-  }
-})
+  await controllers.putRecipeRevisionFile(req, res)
+  expect(res.status).toBeCalledWith(201)
+  expect(res.send).toBeCalledWith()
+}, 10000)

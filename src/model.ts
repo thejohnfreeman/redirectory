@@ -1,7 +1,7 @@
 import express from 'express'
 import path from 'path'
 import * as http from './http.js'
-import { Client } from './octokit.js'
+import { Client, getResponse } from './octokit.js'
 import * as std from './stdlib.js'
 
 const MIME_TYPES = {
@@ -118,7 +118,7 @@ export async function getRecipe(req: express.Request, force = false):
     let prefix = '&nbsp;\n'
     let suffix = ''
 
-    const r1 = await client.getReleaseByTag(level.tag)
+    const r1 = await client.getReleaseByTag(level.tag).catch(getResponse)
     if (r1.status !== 200) {
       if (!force) {
         throw missing(level)
@@ -130,11 +130,7 @@ export async function getRecipe(req: express.Request, force = false):
       const r2 = await client.createRelease(level.tag, {
         body: prefix + Recipe.serialize(value),
       })
-      // TODO: Do not catch this exception here.
-      if (r2.status !== 201) {
-        throw new http.Error(r2.status, r2.data.body)
-      }
-
+      // Exception deliberately uncaught.
       release = r2.data
     } else {
       release = r1.data
@@ -168,10 +164,8 @@ export async function getRecipe(req: express.Request, force = false):
 
 export async function save({ root, client }: Database) {
   const body = root.prefix + Recipe.serialize(root.value) + root.suffix
-  const r1 = await client.updateRelease(root.release.id, { body })
-  if (r1.status !== 200) {
-    throw http.badGateway(`Failed to update metadata: ${root.reference}`)
-  }
+  await client.updateRelease(root.release.id, { body })
+  // Exception deliberately uncaught.
 }
 
 function getChild<T extends { id: string }>(
@@ -278,9 +272,8 @@ export async function getRelease(
       throw http.notFound(`Missing release: ${$revision.level.reference}`)
     } else {
       const r1 = await db.client.createRelease($revision.level.tag)
-      if (r1.status !== 201) {
-        throw http.badGateway(`Cannot create release: ${$revision.level.reference}`)
-      }
+      // TODO: Handle existing release unrecorded in root metadata.
+      // Exception deliberately uncaught.
       data = r1.data
     }
     release = {
@@ -301,9 +294,7 @@ interface Files {
 
 export async function getFiles({ client }: Database, level: Level, release: Release): Promise<Files> {
   const r1 = await client.getRelease(release.id)
-  if (r1.status !== 200) {
-    throw missing(level)
-  }
+  // Exception deliberately uncaught.
   const files = {}
   for (const asset of r1.data.assets) {
     files[asset.name] = {

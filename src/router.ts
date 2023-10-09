@@ -73,11 +73,13 @@ router.get   (`${PATHS.$prev}/files`          , controllers.getPackageRevisionFi
 router.get   (`${PATHS.$prev}/files/:filename`, controllers.getPackageRevisionFile)
 router.put   (`${PATHS.$prev}/files/:filename`, controllers.putPackageRevisionFile)
 
+// The catcher for all unknown routes.
 router.all('*', (req, res) => {
   console.log(req.method, req.originalUrl)
   res.status(501).send()
 })
 
+// The catcher for all uncaught exceptions.
 router.use((err, req, res, next) => {
   console.error(err)
   if (err instanceof http.Error) {

@@ -1,8 +1,6 @@
 import { Octokit } from 'octokit'
 import { badRequest } from './http.js'
 
-const verbosity = parseInt(process.env.VERBOSITY) || 0
-
 function unbase64(input) {
   return Buffer.from(input, 'base64').toString('ascii')
 }
@@ -30,26 +28,9 @@ export function parseBearer(req) {
   return { user, auth }
 }
 
-const traps = {
-  get(target, property) {
-    return new Proxy(Reflect.get(target, property), traps)
-  },
-  async apply(target, self, args) {
-    try {
-      return await Reflect.apply(target, self, args)
-    } catch (error) {
-      return error.response
-    }
-  },
-}
-
-if (verbosity > 1) {
-  const apply = traps.apply
-  traps.apply = async (target, self, args) => {
-    const response = apply(target, self, args)
-    console.debug(await response)
-    return response
-  }
+// TODO: What is the type of an Octokit exception?
+export function getResponse(error) {
+  return error.response
 }
 
 export class Client {
@@ -64,7 +45,6 @@ export class Client {
     const { auth } = parseBearer(req)
     const owner = req.params.channel
     const repo = req.params.name
-    // const octokit = new Proxy(new Octokit({ auth }), traps)
     const octokit = new Octokit({ auth })
     return new Client(auth, owner, repo, octokit)
   }
