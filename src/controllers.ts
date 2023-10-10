@@ -26,6 +26,15 @@ const getFiles = (getRevision) => async (req, res) => {
   res.send(body)
 }
 
+const getUrls = (getRevisible) => async (req, res) => {
+  const { db, $resource: $revisible } = await getRevisible(req)
+  const $rev = model.getLatestRevision($revisible)
+  const release = await model.getRelease(db, $rev)
+  const files = await model.getFiles(db, $rev.level, release)
+  const body = mapObject(files, ({ url }) => url)
+  res.send(body)
+}
+
 const putRevisionFile = (getRevision) => async (req, res) => {
   const { db, $resource: $rev } = await getRevision(req, /*force=*/true)
   const release = await model.getRelease(db, $rev, /*force=*/true)
@@ -47,7 +56,7 @@ export async function getRecipe(req, res) {
 export async function deleteRecipe(req, res) {
   const { db, $resource: $recipe } = await model.getRecipe(req)
 
-  await Promise.all(model.deleteRecipe(db.client, $recipe.value))
+  await Promise.all(model.deleteRecipe(db, $recipe.value))
   $recipe.value.revisions = []
   db.dirty = true
   await model.save(db)
@@ -56,6 +65,7 @@ export async function deleteRecipe(req, res) {
 }
 
 export const getRecipeLatest = getLatest(model.getRecipe)
+export const getRecipeUrls = getUrls(model.getRecipe)
 
 export async function getRecipeRevisions(req, res) {
   const { db, $resource: $recipe } = await model.getRecipe(req)
@@ -66,7 +76,7 @@ export async function getRecipeRevisions(req, res) {
 export async function deleteRecipeRevision(req, res) {
   const { db, $resource: $rrev } = await model.getRecipeRevision(req)
 
-  await Promise.all(model.deleteRecipeRevision(db.client, $rrev.value))
+  await Promise.all(model.deleteRecipeRevision(db, $rrev.value))
   $rrev.siblings.splice($rrev.index, 1)
   db.dirty = true
   await model.save(db)
@@ -81,7 +91,7 @@ export const putRecipeRevisionFile = putRevisionFile(model.getRecipeRevision)
 export async function deleteRecipeRevisionPackages(req, res) {
   const { db, $resource: $rrev } = await model.getRecipeRevision(req)
 
-  await Promise.all(model.deletePackages(db.client, $rrev.value))
+  await Promise.all(model.deletePackages(db, $rrev.value))
   $rrev.value.packages = []
   db.dirty = true
   await model.save(db)

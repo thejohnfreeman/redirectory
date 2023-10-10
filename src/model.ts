@@ -341,36 +341,38 @@ export async function putFile(db: Database, release: Release, req: express.Reque
   )
 }
 
-export async function deleteRevision(client: Client, revision: Revision) {
+export async function deleteRevision(db: Database, revision: Revision) {
   const release = revision.release
   if (!release) {
     return
   }
-  const success = await client.deleteRelease(release.id)
+  const success = await db.client.deleteRelease(release.id)
   if (!success) {
     throw http.badGateway(`Cannot delete release: ${release.id}`)
   }
 }
 
-export function deletePackages(client: Client, $rrev: RecipeRevision): Promise<unknown>[] {
+export function deletePackages(db: Database, $rrev: RecipeRevision): Promise<unknown>[] {
   return $rrev.packages
     .flatMap($package => $package.revisions)
-    .flatMap($prev => deleteRevision(client, $prev))
+    .flatMap($prev => deleteRevision(db, $prev))
 }
 
-export function deleteRecipeRevision(client: Client, $rrev: RecipeRevision): Promise<unknown>[] {
-  const promises = deletePackages(client, $rrev)
+export function deleteRecipeRevision(db: Database, $rrev: RecipeRevision): Promise<unknown>[] {
+  const promises = deletePackages(db, $rrev)
   const release = $rrev.release
   if (release) {
     if ($rrev.id === '0') {
-      // TODO: Delete assets.
+      for (const asset of db.root.release.assets) {
+        promises.push(db.client.deleteAsset(asset.id))
+      }
     } else {
-      promises.push(client.deleteRelease(release.id))
+      promises.push(db.client.deleteRelease(release.id))
     }
   }
   return promises
 }
 
-export function deleteRecipe(client: Client, $recipe: Recipe): Promise<unknown>[] {
-  return $recipe.revisions.flatMap($rrev => deleteRecipeRevision(client, $rrev))
+export function deleteRecipe(db: Database, $recipe: Recipe): Promise<unknown>[] {
+  return $recipe.revisions.flatMap($rrev => deleteRecipeRevision(db, $rrev))
 }
