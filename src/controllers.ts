@@ -30,6 +30,7 @@ const putRevisionFile = (getRevision) => async (req, res) => {
   const { db, $resource: $rev } = await getRevision(req, /*force=*/true)
   const release = await model.getRelease(db, $rev, /*force=*/true)
   const r = await model.putFile(db, release, req)
+  await model.save(db)
   // Should be 201.
   return res.status(r.status).send()
 }
@@ -48,6 +49,7 @@ export async function deleteRecipe(req, res) {
 
   await Promise.all(model.deleteRecipe(db.client, $recipe.value))
   $recipe.value.revisions = []
+  db.dirty = true
   await model.save(db)
 
   return res.send()
@@ -66,6 +68,7 @@ export async function deleteRecipeRevision(req, res) {
 
   await Promise.all(model.deleteRecipeRevision(db.client, $rrev.value))
   $rrev.siblings.splice($rrev.index, 1)
+  db.dirty = true
   await model.save(db)
 
   return res.send()
@@ -80,6 +83,7 @@ export async function deleteRecipeRevisionPackages(req, res) {
 
   await Promise.all(model.deletePackages(db.client, $rrev.value))
   $rrev.value.packages = []
+  db.dirty = true
   await model.save(db)
 
   return res.send()

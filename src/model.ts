@@ -68,6 +68,7 @@ export interface Removable<T> extends Resource <T> {
 export interface Database {
     client: Client
     root: Root
+    dirty: boolean
 }
 
 export interface Root {
@@ -156,16 +157,21 @@ export async function getRecipe(req: express.Request, force = false):
     }
 
     const root = { reference, release, value, prefix, suffix }
-    const db = { client, root }
+    const db = { client, root, dirty: false }
     const $recipe = { level, value }
 
     return { db, $resource: $recipe }
 }
 
-export async function save({ root, client }: Database) {
+export async function save(db: Database) {
+  const { client, root } = db
+  if (!db.dirty) {
+    return
+  }
   const body = root.prefix + Recipe.serialize(root.value) + root.suffix
   await client.updateRelease(root.release.id, { body })
   // Exception deliberately uncaught.
+  db.dirty = false
 }
 
 function getChild<T extends { id: string }>(
@@ -271,9 +277,10 @@ export async function getRelease(
     } else if (!force) {
       throw http.notFound(`Missing release: ${$revision.level.reference}`)
     } else {
-      const r1 = await db.client.createRelease($revision.level.tag)
-      // TODO: Handle existing release unrecorded in root metadata.
-      // Exception deliberately uncaught.
+      let r1 = await db.client.createRelease($revision.level.tag).catch(getResponse)
+      if (r1.status === 422 && r1.data.errors[0].code === 'already_exists') {
+        r1 = await db.client.getReleaseByTag($revision.level.tag)
+      }
       data = r1.data
     }
     release = {
@@ -281,6 +288,7 @@ export async function getRelease(
       origin: new URL(data.upload_url).origin,
     }
     $revision.value.release = release
+    db.dirty = true
   }
   return release
 }
@@ -298,9 +306,9 @@ export async function getFiles({ client }: Database, level: Level, release: Rele
   const files = {}
   for (const asset of r1.data.assets) {
     files[asset.name] = {
-      // TODO: Fill these values.
+      // TODO: Fill this value?
       md5: '',
-      url: '',
+      url: asset.browser_download_url,
     }
   }
   return files

@@ -1,6 +1,5 @@
 import 'expect-more-jest'
 import { readFileSync } from 'fs'
-import { Readable } from 'stream'
 import { Octokit } from 'octokit'
 import * as controllers from '../src/controllers.js'
 
@@ -114,13 +113,40 @@ async function deleteReleases(version: string) {
 test('PUT /:rrev/file/:filename', async () => {
   const version = '0.1.2'
   await deleteReleases(version)
-  const req = fakeRequest({
-    headers: { 'Content-Length': '3' },
+
+  // First request has an incorrect size,
+  // which stops the upload
+  // but not until after creating the release
+  // which is then not saved in the metadata.
+  // Second request needs to recover by detecting the duplicate release.
+  let req = fakeRequest({
+    headers: { 'Content-Length': '2' },
     params: { version, rrev: '1', filename: 'one.txt' },
-    body: Readable.from(['111'])
+    // This doesn't seem to work with `Readable`.
+    // `ReadableStream.from` is not available until Node 20.6.
+    body: new Blob(['111']),
   })
-  const res = fakeResponse()
+  let res = fakeResponse()
+  await expect(controllers.putRecipeRevisionFile(req, res)).rejects.toThrow()
+
+  req = fakeRequest({
+    headers: { 'Content-Length': '3' },
+    params: { version, rrev: '1', filename: 'two.txt' },
+    body: new Blob(['222']),
+  })
+  res = fakeResponse()
   await controllers.putRecipeRevisionFile(req, res)
   expect(res.status).toBeCalledWith(201)
   expect(res.send).toBeCalledWith()
-}, 10000)
+
+  req = fakeRequest({
+    headers: { 'Content-Length': '3' },
+    params: { version, rrev: '1', filename: 'three.txt' },
+    body: new Blob(['333']),
+  })
+  res = fakeResponse()
+  await controllers.putRecipeRevisionFile(req, res)
+  expect(res.status).toBeCalledWith(201)
+  expect(res.send).toBeCalledWith()
+
+}, 20000)
