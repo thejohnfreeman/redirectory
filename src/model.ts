@@ -11,32 +11,32 @@ const MIME_TYPES = {
 }
 
 export interface Release {
-    id: number
-    origin: string
+  id: number
+  origin: string
 }
 
 export interface Revision {
-    id: string
-    time: string
-    // Missing in non-uploaded revisions, and when rrev === '0'.
-    release?: Release
+  id: string
+  time: string
+  // Missing in non-uploaded revisions, and when rrev === '0'.
+  release?: Release
 }
 
 export interface Revisible<T extends Revision = Revision> {
-    revisions: T[]
+  revisions: T[]
 }
 
-export interface Recipe extends Revisible<RecipeRevision> { }
+export interface Recipe extends Revisible<RecipeRevision> {}
 
 export interface RecipeRevision extends Revision {
-    packages: Package[]
+  packages: Package[]
 }
 
 export interface Package extends Revisible<PackageRevision> {
     id: string
 }
 
-export interface PackageRevision extends Revision { }
+export interface PackageRevision extends Revision {}
 
 namespace Recipe {
   export function serialize($recipe: Recipe): string {
@@ -50,41 +50,41 @@ namespace Recipe {
 }
 
 export interface Level {
-    type: string
-    tag: string
-    reference: string
+  type: string
+  tag: string
+  reference: string
 }
 
 export interface Resource<T> {
-    level: Level
-    value: T
+  level: Level
+  value: T
 }
 
-export interface Removable<T> extends Resource <T> {
-    siblings: T[]
-    index: number
+export interface Removable<T> extends Resource<T> {
+  siblings: T[]
+  index: number
 }
 
 export interface Database {
-    client: Client
-    root: Root
-    dirty: boolean
+  client: Client
+  root: Root
+  dirty: boolean
 }
 
 export interface Root {
-    reference: string
-    release: {
-      id: number
-      upload_url: string
-      assets: { id: number; name: string; browser_download_url: string }[]
-    },
-    value: Recipe
-    prefix: string
-    suffix: string
+  reference: string
+  release: {
+    id: number
+    upload_url: string
+    assets: { id: number; name: string; browser_download_url: string }[]
+  }
+  value: Recipe
+  prefix: string
+  suffix: string
 }
 
 function missing(level: Level) {
-    return http.notFound(`${level.type} missing: ${level.reference}`)
+  return http.notFound(`${level.type} missing: ${level.reference}`)
 }
 
 function reviseLevel(level: Level, id: string) {
@@ -99,68 +99,68 @@ function reviseLevel(level: Level, id: string) {
 export async function getRecipe(req: express.Request, force = false):
   Promise<{ db: Database, $resource: Resource<Recipe> }>
 {
-    const client = Client.new(req)
+  const client = Client.new(req)
 
-    const { name, version, user, channel } = req.params
-    const reference = `${name}/${version}@${user}/${channel}`
-    if (user !== 'github') {
-      throw http.forbidden(`Not a GitHub package: '${reference}'`)
+  const { name, version, user, channel } = req.params
+  const reference = `${name}/${version}@${user}/${channel}`
+  if (user !== 'github') {
+    throw http.forbidden(`Not a GitHub package: '${reference}'`)
+  }
+
+  const level = { type: 'Recipe', tag: version, reference }
+
+  let release
+  let value: Recipe = {
+    revisions: [{ id: '0', time: std.nowString(), packages: [] }],
+  }
+  // If the body is entirely an HTML comment, GitHub will show it.
+  // Use a non-whitespace HTML string that renders as whitespace
+  // to hide the comment.
+  let prefix = '&nbsp;\n'
+  let suffix = ''
+
+  const r1 = await client.getReleaseByTag(level.tag).catch(getResponse)
+  if (r1.status !== 200) {
+    if (!force) {
+      throw missing(level)
     }
 
-    const level = { type: 'Recipe', tag: version, reference }
+    // This will create the root tag,
+    // pointing at the tip of the default branch,
+    // if it does not exist.
+    const r2 = await client.createRelease(level.tag, {
+      body: prefix + Recipe.serialize(value),
+    })
+    // Exception deliberately uncaught.
+    release = r2.data
+  } else {
+    release = r1.data
 
-    let release
-    let value: Recipe = {
-      revisions: [{ id: '0', time: std.nowString(), packages: [] }],
-    }
-    // If the body is entirely an HTML comment, GitHub will show it.
-    // Use a non-whitespace HTML string that renders as whitespace
-    // to hide the comment.
-    let prefix = '&nbsp;\n'
-    let suffix = ''
-
-    const r1 = await client.getReleaseByTag(level.tag).catch(getResponse)
-    if (r1.status !== 200) {
-      if (!force) {
-        throw missing(level)
+    const body = r1.data.body || prefix
+    let match = body.match(
+      /([\s\S]*)<!--\s*redirectory\s*([\s\S]*?)\s*-->([\s\S]*)/,
+    )
+    if (match) {
+      prefix = match[1]
+      suffix = match[3]
+      let comment = match[2]
+      comment = comment.substring(comment.indexOf('{'))
+      try {
+        value = std.parseJsonPrefix(comment)
+      } catch (error) {
+        throw http.badGateway(`Bad metadata comment: ${reference}`)
       }
-
-      // This will create the root tag,
-      // pointing at the tip of the default branch,
-      // if it does not exist.
-      const r2 = await client.createRelease(level.tag, {
-        body: prefix + Recipe.serialize(value),
-      })
-      // Exception deliberately uncaught.
-      release = r2.data
     } else {
-      release = r1.data
-
-      const body = r1.data.body || prefix
-      let match = body.match(
-        /([\s\S]*)<!--\s*redirectory\s*([\s\S]*?)\s*-->([\s\S]*)/,
-      )
-      if (match) {
-        prefix = match[1]
-        suffix = match[3]
-        let comment = match[2]
-        comment = comment.substring(comment.indexOf('{'))
-        try {
-          value = std.parseJsonPrefix(comment)
-        } catch (error) {
-          throw http.badGateway(`Bad metadata comment: ${reference}`)
-        }
-      } else {
-        prefix = body
-        value = { revisions: [] }
-      }
+      prefix = body
+      value = { revisions: [] }
     }
+  }
 
-    const root = { reference, release, value, prefix, suffix }
-    const db = { client, root, dirty: false }
-    const $recipe = { level, value }
+  const root = { reference, release, value, prefix, suffix }
+  const db = { client, root, dirty: false }
+  const $recipe = { level, value }
 
-    return { db, $resource: $recipe }
+  return { db, $resource: $recipe }
 }
 
 export async function save(db: Database) {
