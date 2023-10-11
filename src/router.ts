@@ -76,6 +76,11 @@ router.get   (`${PATHS.$prev}/files`           , controllers.getPackageRevisionF
 router.get   (`${PATHS.$prev}/files/:filename` , controllers.getPackageRevisionFile)
 router.put   (`${PATHS.$prev}/files/:filename` , controllers.putPackageRevisionFile)
 
+router.get(
+  '/:api/conans/:name/:version/:user/:channel/packages/:package/download_urls',
+  controllers.getPackageDownloadUrls,
+)
+
 router.put(
   '/:api/files/:name/:version/:user/:channel/:rrev/export/:filename',
   controllers.putRecipeRevisionFile,

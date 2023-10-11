@@ -237,7 +237,7 @@ export async function getPackage(req: express.Request, force = false):
   Promise<{ db: Database, $resource: Removable<Package> }>
 {
   const { db, $resource: $rrev } = await getRecipeRevision(req, force)
-  const id = this.req.params.package
+  const id = req.params.package
   if (id === '0') {
     throw http.badRequest(`invalid package ID: ${id}`)
   }
@@ -258,7 +258,7 @@ export async function getPackageRevision(req: express.Request, force = false):
   Promise<{ db: Database, $resource: Removable<PackageRevision> }>
 {
   const { db, $resource: $package } = await getPackage(req, force)
-  const id = this.req.params.prev
+  const id = req.params.prev
   const level = sublevelRevision($package.level, id)
   const siblings = $package.value.revisions
   const { index, value } = getChild(level, siblings, id, force, {

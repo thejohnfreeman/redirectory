@@ -144,6 +144,11 @@ export async function deleteRecipeRevisionPackages(req, res) {
 
 export const getPackageLatest = getLatest(model.getPackage)
 
+export function getPackageDownloadUrls(req, res) {
+  req.params.rrev = '0'
+  return getDownloadUrls(model.getPackage)(req, res)
+}
+
 export const getPackageRevisionFiles = getFiles(model.getPackageRevision)
 export const getPackageRevisionFile = getFile(model.getPackageRevision)
 export const putPackageRevisionFile = putRevisionFile(model.getPackageRevision)
