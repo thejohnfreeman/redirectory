@@ -2,6 +2,7 @@ export function success(code: number) {
   return Math.floor(code / 100) === 2
 }
 
+// https://github.com/Microsoft/TypeScript/wiki/FAQ#why-doesnt-extending-built-ins-like-error-array-and-map-work
 export class Error extends globalThis.Error {
   constructor(
     public code: number,

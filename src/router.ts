@@ -61,9 +61,11 @@ router.get('/:api/users/check_credentials', async (req, res) => {
 
 router.get   (`${PATHS.$recipe}`               , controllers.getRecipe)
 router.delete(`${PATHS.$recipe}`               , controllers.deleteRecipe)
+router.get   (`${PATHS.$recipe}/digest`        , controllers.getRecipeDownloadUrls)
 router.get   (`${PATHS.$recipe}/latest`        , controllers.getRecipeLatest)
 router.get   (`${PATHS.$recipe}/revisions`     , controllers.getRecipeRevisions)
-router.get   (`${PATHS.$recipe}/download_urls` , controllers.getRecipeUrls)
+router.get   (`${PATHS.$recipe}/download_urls` , controllers.getRecipeDownloadUrls)
+router.post  (`${PATHS.$recipe}/upload_urls`   , controllers.getRecipeUploadUrls)
 router.delete(`${PATHS.$rrev}`                 , controllers.deleteRecipeRevision)
 router.get   (`${PATHS.$rrev}/files`           , controllers.getRecipeRevisionFiles)
 router.get   (`${PATHS.$rrev}/files/:filename` , controllers.getRecipeRevisionFile)
@@ -73,6 +75,11 @@ router.get   (`${PATHS.$package}/latest`       , controllers.getPackageLatest)
 router.get   (`${PATHS.$prev}/files`           , controllers.getPackageRevisionFiles)
 router.get   (`${PATHS.$prev}/files/:filename` , controllers.getPackageRevisionFile)
 router.put   (`${PATHS.$prev}/files/:filename` , controllers.putPackageRevisionFile)
+
+router.put(
+  '/:api/files/:name/:version/:user/:channel/:rrev/export/:filename',
+  controllers.putRecipeRevisionFile,
+)
 
 // The catcher for all unknown routes.
 router.all('*', (req, res) => {

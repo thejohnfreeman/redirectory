@@ -14,7 +14,7 @@ ${image} <<EOF
 conan config set general.revisions_enabled=${revisions}
 conan copy zlib/1.2.13@ github/thejohnfreeman --all
 cd redirectory
-PORT=80 VERBOSITY=3 npm start >redirectory.server.log 2>&1 &
+PORT=80 VERBOSE=3 npm start >redirectory.server.log 2>&1 &
 pid1=\$!
 tcpdump -i any -U -w redirectory.pcap tcp port 80 &
 pid2=\$!

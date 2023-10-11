@@ -339,6 +339,8 @@ function shunt(writable: Writable) {
   })
 }
 
+const verbose = parseInt(process.env.VERBOSE) || 0
+
 export async function putFile(db: Database, release: Release, req: express.Request) {
   const { filename } = req.params
   const extension = path.extname(filename)
@@ -347,24 +349,37 @@ export async function putFile(db: Database, release: Release, req: express.Reque
   const hash = createHash('md5')
   const body = req.pipe(shunt(hash))
 
-  const response = await fetch(
-    `${release.origin}/repos/${db.client.owner}/${db.client.repo}/releases/${release.id}/assets?name=${filename}`,
-      {
-      method: 'POST',
-      headers: {
-        Accept: 'application/vnd.github+json',
-        Authorization: `Bearer ${db.client.auth}`,
-        'Content-Type': mimeType,
-        'Content-Length': req.get('Content-Length'),
-        'X-GitHub-Api-Version': '2022-11-28',
-      },
-      // This key is unknown in @types/node 20.4.6.
-      duplex: 'half',
-      body: body,
-    } as any,
-  )
+  const url = `${release.origin}/repos/${db.client.owner}/${db.client.repo}/releases/${release.id}/assets?name=${filename}`
+  const headers = {
+    Accept: 'application/vnd.github+json',
+    Authorization: `Bearer ${db.client.auth}`,
+    'Content-Type': mimeType,
+    'Content-Length': req.get('Content-Length'),
+    'X-GitHub-Api-Version': '2022-11-28',
+  }
 
+  if (verbose > 1) {
+    console.debug(url, headers)
+  }
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: headers,
+    // This key is unknown in @types/node 20.4.6.
+    duplex: 'half',
+    body: body,
+  } as any)
   const data = await response.json()
+
+  if (verbose > 1) {
+    console.debug(response.status, data)
+  }
+
+  // TODO: Can we just throw the response?
+  if (response.status !== 201) {
+    throw new http.Error(response.status, data)
+  }
+
   data.md5 = hash.digest('hex')
   return data
 }

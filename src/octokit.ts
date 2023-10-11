@@ -12,6 +12,10 @@ function unbase64(input) {
 export function parseBearer(req) {
   const header = req.get('Authorization')
   if (!header) {
+    const { user, auth } = req.query
+    if (user && auth) {
+      return { user, auth }
+    }
     throw badRequest('Missing header: Authorization')
   }
   const m1 = header.match(/^Bearer\s+(\S+?)\s*$/)
@@ -45,6 +49,32 @@ export function parseRepository(req): Repository {
   }
 }
 
+class Traps {
+  constructor(private path: string) {}
+
+  get(target, property) {
+    return new Proxy(
+        Reflect.get(target, property),
+        new Traps(this.path + '.' + property),
+    )
+  }
+
+  async apply(target, self, args) {
+    try {
+      const response = await Reflect.apply(target, self, args)
+      console.debug(this.path, args)
+      console.debug(response)
+      return response
+    } catch (error) {
+      console.debug(this.path, args)
+      console.debug(error)
+      throw error
+    }
+  }
+}
+
+const verbose = parseInt(process.env.VERBOSE) || 0
+
 export class Client {
   constructor(
     public readonly auth: string,
@@ -56,7 +86,10 @@ export class Client {
   static new(req) {
     const { auth } = parseBearer(req)
     const { owner, name: repo } = parseRepository(req)
-    const octokit = new Octokit({ auth })
+    let octokit = new Octokit({ auth })
+    if (verbose > 1) {
+      octokit = new Proxy(octokit, new Traps('octokit'))
+    }
     return new Client(auth, owner, repo, octokit)
   }
 

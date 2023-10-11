@@ -1,5 +1,6 @@
-import { parseRepository } from './octokit.js'
+import { parseBearer, parseRepository } from './octokit.js'
 import * as model from './model.js'
+import jwt from 'jsonwebtoken'
 
 function mapObject(object, fn) {
   return Object.fromEntries(Object.entries(object).map(([k, v]) => [k, fn(v)]))
@@ -27,12 +28,52 @@ const getFiles = (getRevision) => async (req, res) => {
   res.send(body)
 }
 
-const getUrls = (getRevisible) => async (req, res) => {
+const getDownloadUrls = (getRevisible) => async (req, res) => {
   const { db, $resource: $revisible } = await getRevisible(req)
   const $rev = model.getLatestRevision($revisible)
   const release = await model.getRelease(db, $rev)
   const files = await model.getFiles(db, $rev.level, release)
   const body = mapObject(files, ({ url }) => url)
+  res.send(body)
+}
+
+function readStream(stream): Promise<string> {
+  return new Promise((resolve, reject) => {
+    // += is 75% faster than Array.join.
+    let data = ''
+    stream.on('data', chunk => data += chunk)
+    stream.on('end', () => resolve(data))
+    stream.on('error', error => reject(error))
+  })
+}
+
+const SIGNING_KEY = 'abcd1234'
+
+const getUploadUrls = async (req, res) => {
+  // Just for the check.
+  const level = model.getRecipeLevel(req)
+  const { name, version, user, channel } = req.params
+  const { auth, user: username } = parseBearer(req)
+  const json = await readStream(req)
+  const files = JSON.parse(json)
+  const body = {}
+  // Expires 30 minutes into the future?
+  const SECONDS_PER_MINUTE = 60
+  const exp = Math.floor(new Date().getTime() / 1000) + 30 * SECONDS_PER_MINUTE
+  for (const filename of Object.keys(files)) {
+    const resource_path = `${name}/${version}/${user}/${channel}/0/export/${filename}`
+    const filesize = files[filename]
+    const token = jwt.sign({
+      resource_path,
+      username,
+      filesize,
+      exp
+    }, SIGNING_KEY, {
+      noTimestamp: true
+    })
+    // TODO: Encode the `user` and `auth` query parameters.
+    body[filename] = `${req.protocol}://${req.headers.host}/v1/files/${resource_path}?signature=${token}&user=${username}&auth=${auth}`
+  }
   res.send(body)
 }
 
@@ -68,7 +109,8 @@ export async function deleteRecipe(req, res) {
 }
 
 export const getRecipeLatest = getLatest(model.getRecipe)
-export const getRecipeUrls = getUrls(model.getRecipe)
+export const getRecipeDownloadUrls = getDownloadUrls(model.getRecipe)
+export const getRecipeUploadUrls = getUploadUrls
 
 export async function getRecipeRevisions(req, res) {
   const { db, $resource: $recipe } = await model.getRecipe(req)
