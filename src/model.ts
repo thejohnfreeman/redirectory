@@ -3,6 +3,8 @@ import path from 'path'
 import * as http from './http.js'
 import { Client, getResponse } from './octokit.js'
 import * as std from './stdlib.js'
+import { Writable, Transform } from 'node:stream'
+import { createHash } from 'node:crypto'
 
 const MIME_TYPES = {
   '.txt': 'text/plain',
@@ -10,9 +12,15 @@ const MIME_TYPES = {
   '.tgz': 'application/gzip',
 }
 
+export interface Asset {
+  md5: string
+  url: string
+}
+
 export interface Release {
   id: number
   origin: string
+  assets: Record<string, Asset>
 }
 
 export interface Revision {
@@ -33,7 +41,7 @@ export interface RecipeRevision extends Revision {
 }
 
 export interface Package extends Revisible<PackageRevision> {
-    id: string
+  id: string
 }
 
 export interface PackageRevision extends Revision {}
@@ -68,7 +76,6 @@ export interface Removable<T> extends Resource<T> {
 export interface Database {
   client: Client
   root: Root
-  dirty: boolean
 }
 
 export interface Root {
@@ -157,21 +164,16 @@ export async function getRecipe(req: express.Request, force = false):
   }
 
   const root = { reference, release, value, prefix, suffix }
-  const db = { client, root, dirty: false }
+  const db = { client, root }
   const $recipe = { level, value }
 
   return { db, $resource: $recipe }
 }
 
-export async function save(db: Database) {
-  const { client, root } = db
-  if (!db.dirty) {
-    return
-  }
+export async function save({ client, root }: Database) {
   const body = root.prefix + Recipe.serialize(root.value) + root.suffix
   await client.updateRelease(root.release.id, { body })
   // Exception deliberately uncaught.
-  db.dirty = false
 }
 
 function getChild<T extends { id: string }>(
@@ -286,9 +288,9 @@ export async function getRelease(
     release = {
       id: data.id,
       origin: new URL(data.upload_url).origin,
+      assets: {},
     }
     $revision.value.release = release
-    db.dirty = true
   }
   return release
 }
@@ -301,17 +303,7 @@ interface Files {
 }
 
 export async function getFiles({ client }: Database, level: Level, release: Release): Promise<Files> {
-  const r1 = await client.getRelease(release.id)
-  // Exception deliberately uncaught.
-  const files = {}
-  for (const asset of r1.data.assets) {
-    files[asset.name] = {
-      // TODO: Fill this value?
-      md5: '',
-      url: asset.browser_download_url,
-    }
-  }
-  return files
+  return release.assets
 }
 
 export function getFile(db: Database, $revision: Resource<Revision>, filename: string): string {
@@ -319,12 +311,24 @@ export function getFile(db: Database, $revision: Resource<Revision>, filename: s
   return `https://github.com/${db.client.owner}/${db.client.repo}/releases/download/${encodeURIComponent($revision.level.tag)}/${filename}`
 }
 
+function shunt(writable: Writable) {
+  return new Transform({
+    transform(chunk, encoding, callback) {
+      this.push(chunk, encoding)
+      writable.write(chunk, encoding, callback)
+    }
+  })
+}
+
 export async function putFile(db: Database, release: Release, req: express.Request) {
   const { filename } = req.params
   const extension = path.extname(filename)
   const mimeType = MIME_TYPES[extension] || 'application/octet-stream'
 
-  return fetch(
+  const hash = createHash('md5')
+  const body = req.pipe(shunt(hash))
+
+  const response = await fetch(
     `${release.origin}/repos/${db.client.owner}/${db.client.repo}/releases/${release.id}/assets?name=${filename}`,
       {
       method: 'POST',
@@ -335,10 +339,15 @@ export async function putFile(db: Database, release: Release, req: express.Reque
         'Content-Length': req.get('Content-Length'),
         'X-GitHub-Api-Version': '2022-11-28',
       },
+      // This key is unknown in @types/node 20.4.6.
       duplex: 'half',
-      body: req,
+      body: body,
     } as any,
   )
+
+  const data = await response.json()
+  data.md5 = hash.digest('hex')
+  return data
 }
 
 export async function deleteRevision(db: Database, revision: Revision) {

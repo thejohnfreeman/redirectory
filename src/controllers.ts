@@ -38,10 +38,13 @@ const getUrls = (getRevisible) => async (req, res) => {
 const putRevisionFile = (getRevision) => async (req, res) => {
   const { db, $resource: $rev } = await getRevision(req, /*force=*/true)
   const release = await model.getRelease(db, $rev, /*force=*/true)
-  const r = await model.putFile(db, release, req)
+  const data = await model.putFile(db, release, req)
+  release.assets[data.name] = {
+    md5: data.md5,
+    url: data.browser_download_url,
+  }
   await model.save(db)
-  // Should be 201.
-  return res.status(r.status).send()
+  return res.status(201).send()
 }
 
 export async function getRecipe(req, res) {
@@ -58,7 +61,6 @@ export async function deleteRecipe(req, res) {
 
   await Promise.all(model.deleteRecipe(db, $recipe.value))
   $recipe.value.revisions = []
-  db.dirty = true
   await model.save(db)
 
   return res.send()
@@ -78,7 +80,6 @@ export async function deleteRecipeRevision(req, res) {
 
   await Promise.all(model.deleteRecipeRevision(db, $rrev.value))
   $rrev.siblings.splice($rrev.index, 1)
-  db.dirty = true
   await model.save(db)
 
   return res.send()
@@ -93,7 +94,6 @@ export async function deleteRecipeRevisionPackages(req, res) {
 
   await Promise.all(model.deletePackages(db, $rrev.value))
   $rrev.value.packages = []
-  db.dirty = true
   await model.save(db)
 
   return res.send()

@@ -1,6 +1,7 @@
 import 'expect-more-jest'
 import { readFileSync } from 'fs'
 import { Octokit } from 'octokit'
+import { Readable } from 'node:stream'
 import * as controllers from '../src/controllers.js'
 
 const auth = readFileSync('github.token').toString().trim()
@@ -110,7 +111,7 @@ async function deleteReleases(version: string) {
   ))
 }
 
-test('PUT /:rrev/file/:filename', async () => {
+test.only('PUT /:rrev/file/:filename', async () => {
   const version = '0.1.2'
   await deleteReleases(version)
 
@@ -122,9 +123,7 @@ test('PUT /:rrev/file/:filename', async () => {
   let req = fakeRequest({
     headers: { 'Content-Length': '2' },
     params: { version, rrev: '1', filename: 'one.txt' },
-    // This doesn't seem to work with `Readable`.
-    // `ReadableStream.from` is not available until Node 20.6.
-    body: new Blob(['111']),
+    body: Readable.from(['111']),
   })
   let res = fakeResponse()
   await expect(controllers.putRecipeRevisionFile(req, res)).rejects.toThrow()
@@ -132,7 +131,7 @@ test('PUT /:rrev/file/:filename', async () => {
   req = fakeRequest({
     headers: { 'Content-Length': '3' },
     params: { version, rrev: '1', filename: 'two.txt' },
-    body: new Blob(['222']),
+    body: Readable.from(['222']),
   })
   res = fakeResponse()
   await controllers.putRecipeRevisionFile(req, res)
@@ -142,7 +141,7 @@ test('PUT /:rrev/file/:filename', async () => {
   req = fakeRequest({
     headers: { 'Content-Length': '3' },
     params: { version, rrev: '1', filename: 'three.txt' },
-    body: new Blob(['333']),
+    body: Readable.from(['333']),
   })
   res = fakeResponse()
   await controllers.putRecipeRevisionFile(req, res)
