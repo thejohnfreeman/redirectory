@@ -1,3 +1,4 @@
+import { parseRepository } from './octokit.js'
 import * as model from './model.js'
 
 function mapObject(object, fn) {
@@ -11,10 +12,10 @@ const getLatest = (getRevisible) => async (req, res) => {
   res.send({ revision: id, time })
 }
 
-const getFile = (getRevision) => async (req, res) => {
-  // TODO: Do not open the database. Just parse the parameters.
-  const { db, $resource: $rev } = await getRevision(req)
-  const url = model.getFile(db, $rev, req.params.filename)
+const getFile = (getLevel) => (req, res) => {
+  const repo = parseRepository(req)
+  const level = getLevel(req)
+  const url = model.getFile(repo, level, req.params.filename)
   return res.redirect(301, url)
 }
 

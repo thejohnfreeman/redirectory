@@ -1,7 +1,7 @@
 import express from 'express'
 import path from 'path'
 import * as http from './http.js'
-import { Client, getResponse } from './octokit.js'
+import { Client, getResponse, Repository } from './octokit.js'
 import * as std from './stdlib.js'
 import { Writable, Transform } from 'node:stream'
 import { createHash } from 'node:crypto'
@@ -17,10 +17,12 @@ export interface Asset {
   url: string
 }
 
+type Assets = Record<string, Asset>
+
 export interface Release {
   id: number
   origin: string
-  assets: Record<string, Asset>
+  assets: Assets
 }
 
 export interface Revision {
@@ -79,7 +81,6 @@ export interface Database {
 }
 
 export interface Root {
-  reference: string
   release: {
     id: number
     upload_url: string
@@ -94,7 +95,7 @@ function missing(level: Level) {
   return http.notFound(`${level.type} missing: ${level.reference}`)
 }
 
-function reviseLevel(level: Level, id: string) {
+function sublevelRevision(level: Level, id: string) {
   level = { ...level }
   if (id !== '0') {
     level.tag += '#' + id
@@ -103,18 +104,43 @@ function reviseLevel(level: Level, id: string) {
   return level
 }
 
-export async function getRecipe(req: express.Request, force = false):
-  Promise<{ db: Database, $resource: Resource<Recipe> }>
-{
-  const client = Client.new(req)
+function sublevelPackage(level: Level, id: string) {
+  level = { ...level }
+  level.type = 'Package'
+  level.tag += '@' + id
+  level.reference += ':' + id
+  return level
+}
 
+export function getRecipeLevel(req: express.Request): Level {
   const { name, version, user, channel } = req.params
   const reference = `${name}/${version}@${user}/${channel}`
   if (user !== 'github') {
     throw http.forbidden(`Not a GitHub package: '${reference}'`)
   }
+  return { type: 'Recipe', tag: version, reference }
+}
 
-  const level = { type: 'Recipe', tag: version, reference }
+export function getRecipeRevisionLevel(req: express.Request): Level {
+  const level = getRecipeLevel(req)
+  return sublevelRevision(level, req.params.rrev)
+}
+
+export function getPackageLevel(req: express.Request): Level {
+  const level = getRecipeRevisionLevel(req)
+  return sublevelPackage(level, req.params.package)
+}
+
+export function getPackageRevisionLevel(req: express.Request): Level {
+  const level = getPackageLevel(req)
+  return sublevelRevision(level, req.params.prev)
+}
+
+export async function getRecipe(req: express.Request, force = false):
+  Promise<{ db: Database, $resource: Resource<Recipe> }>
+{
+  const client = Client.new(req)
+  const level = getRecipeLevel(req)
 
   let release
   let value: Recipe = {
@@ -155,7 +181,7 @@ export async function getRecipe(req: express.Request, force = false):
       try {
         value = std.parseJsonPrefix(comment)
       } catch (error) {
-        throw http.badGateway(`Bad metadata comment: ${reference}`)
+        throw http.badGateway(`Bad metadata comment: ${level.reference}`)
       }
     } else {
       prefix = body
@@ -163,7 +189,7 @@ export async function getRecipe(req: express.Request, force = false):
     }
   }
 
-  const root = { reference, release, value, prefix, suffix }
+  const root = { release, value, prefix, suffix }
   const db = { client, root }
   const $recipe = { level, value }
 
@@ -196,7 +222,7 @@ export async function getRecipeRevision(req: express.Request, force = false):
 {
   const { db, $resource: $recipe } = await getRecipe(req, force)
   const id = req.params.rrev
-  const level = reviseLevel($recipe.level, id)
+  const level = sublevelRevision($recipe.level, id)
   const siblings = $recipe.value.revisions
   const { index, value } = getChild(level, siblings, id, force, {
     id,
@@ -233,7 +259,7 @@ export async function getPackageRevision(req: express.Request, force = false):
 {
   const { db, $resource: $package } = await getPackage(req, force)
   const id = this.req.params.prev
-  const level = reviseLevel($package.level, id)
+  const level = sublevelRevision($package.level, id)
   const siblings = $package.value.revisions
   const { index, value } = getChild(level, siblings, id, force, {
     id,
@@ -251,7 +277,7 @@ export function getLatestRevision($revisible: Resource<Revisible>): Removable<Re
     throw missing($revisible.level)
   }
   const { value, index } = std.maxBy(siblings, (revision) => revision.time)
-  const level = reviseLevel($revisible.level, value.id)
+  const level = sublevelRevision($revisible.level, value.id)
   return { level, value, siblings, index }
 }
 
@@ -295,20 +321,13 @@ export async function getRelease(
   return release
 }
 
-interface Files {
-  [name: string]: {
-    md5: string
-    url: string
-  }
-}
-
-export async function getFiles({ client }: Database, level: Level, release: Release): Promise<Files> {
+export async function getFiles({ client }: Database, level: Level, release: Release): Promise<Assets> {
   return release.assets
 }
 
-export function getFile(db: Database, $revision: Resource<Revision>, filename: string): string {
+export function getFile(repo: Repository, level: Level, filename: string): string {
   // It seems we can assume the download URL.
-  return `https://github.com/${db.client.owner}/${db.client.repo}/releases/download/${encodeURIComponent($revision.level.tag)}/${filename}`
+  return `https://github.com/${repo.owner}/${repo.name}/releases/download/${encodeURIComponent(level.tag)}/${filename}`
 }
 
 function shunt(writable: Writable) {

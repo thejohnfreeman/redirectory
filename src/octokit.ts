@@ -33,6 +33,18 @@ export function getResponse(error) {
   return error.response
 }
 
+export interface Repository {
+  owner: string
+  name: string
+}
+
+export function parseRepository(req): Repository {
+  return {
+    owner: req.params.channel,
+    name: req.params.name,
+  }
+}
+
 export class Client {
   constructor(
     public readonly auth: string,
@@ -43,8 +55,7 @@ export class Client {
 
   static new(req) {
     const { auth } = parseBearer(req)
-    const owner = req.params.channel
-    const repo = req.params.name
+    const { owner, name: repo } = parseRepository(req)
     const octokit = new Octokit({ auth })
     return new Client(auth, owner, repo, octokit)
   }
