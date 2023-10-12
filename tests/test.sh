@@ -5,6 +5,8 @@ set -o errexit
 set -o pipefail
 set -o xtrace
 
+revisions=${1:-True}
+
 owner=thejohnfreeman
 repo=zlib
 tag=1.2.13
@@ -55,10 +57,8 @@ build() {
 
 wait_for() {
   status=${2:-200}
-  json=$(mktemp)
-  trap "rm -f ${json}" RETURN
   tries=0
-  while ! curl --location --include ${1} | grep --quiet "HTTP/2 ${status}"; do
+  while ! curl --silent --location --include ${1} | grep --quiet "HTTP/2 ${status}"; do
       let "tries = ${tries} + 1"
       [ ${tries} -lt 30 ] || exit 1
       sleep 1
@@ -67,6 +67,9 @@ wait_for() {
 
 output=$(mktemp)
 trap "rm -f ${output}" EXIT
+
+conan config set general.revisions_enabled=${revisions}
+conan copy ${repo}/${tag}@ github/${owner} --all
 
 # conan info ${reference} --json ${output}
 file=~/.conan/data/${repo}/${tag}/github/${owner}/metadata.json
@@ -137,7 +140,13 @@ expect "ERROR: 404: Not Found."
 header RE-UPLOAD
 conan copy ${repo}/${tag}@test/test github/${owner} --all
 ${upload} --all
+wait_for ${source_manifest}
+sleep 30
+wait_for ${source_manifest}
 ${upload}
+wait_for ${binary_manifest}
+sleep 1
+wait_for ${binary_manifest}
 ${upload} --all
 # TODO: Use default token for read-only commands.
 # conan user --clean
