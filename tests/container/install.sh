@@ -32,7 +32,7 @@ dependencies+=' python3-pip'
 dependencies+=' make'
 # - compilers
 dependencies+=" gcc-${gcc_version} g++-${gcc_version}"
-dependencies+=' jq tcpdump'
+dependencies+=' jq tcpdump lsof psmisc'
 apt install --yes ${dependencies}
 
 # Install Node and NPM.

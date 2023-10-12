@@ -23,17 +23,17 @@ const getFile = (getLevel) => (req, res) => {
 const getFiles = (getRevision) => async (req, res) => {
   const { db, $resource: $rev } = await getRevision(req)
   const release = await model.getRelease(db, $rev)
-  const files = await model.getFiles(db, $rev.level, release)
-  const body = mapObject(files, () => ({}))
-  res.send(body)
+  const assets = await model.getAssets(db, $rev.level, release)
+  const files = mapObject(assets, () => ({}))
+  res.send({ files })
 }
 
 const getDownloadUrls = (getRevisible) => async (req, res) => {
   const { db, $resource: $revisible } = await getRevisible(req)
   const $rev = model.getLatestRevision($revisible)
   const release = await model.getRelease(db, $rev)
-  const files = await model.getFiles(db, $rev.level, release)
-  const body = mapObject(files, ({ url }) => url)
+  const assets = await model.getAssets(db, $rev.level, release)
+  const body = mapObject(assets, ({ url }) => url)
   res.send(body)
 }
 
@@ -93,8 +93,8 @@ export async function getRecipe(req, res) {
   const { db, $resource: $recipe } = await model.getRecipe(req)
   const $rrev = model.getLatestRevision($recipe)
   const release = await model.getRelease(db, $rrev)
-  const files = await model.getFiles(db, $rrev.level, release)
-  const body = mapObject(files, ({ md5 }) => md5)
+  const assets = await model.getAssets(db, $rrev.level, release)
+  const body = mapObject(assets, ({ md5 }) => md5)
   return res.send(body)
 }
 
@@ -115,7 +115,7 @@ export const getRecipeUploadUrls = getUploadUrls
 export async function getRecipeRevisions(req, res) {
   const { db, $resource: $recipe } = await model.getRecipe(req)
   const revisions = model.getRevisions($recipe)
-  res.send(revisions)
+  res.send({ revisions })
 }
 
 export async function deleteRecipeRevision(req, res) {
@@ -129,7 +129,7 @@ export async function deleteRecipeRevision(req, res) {
 }
 
 export const getRecipeRevisionFiles = getFiles(model.getRecipeRevision)
-export const getRecipeRevisionFile = getFile(model.getRecipeRevision)
+export const getRecipeRevisionFile = getFile(model.getRecipeRevisionLevel)
 export const putRecipeRevisionFile = putRevisionFile(model.getRecipeRevision)
 
 export async function deleteRecipeRevisionPackages(req, res) {
@@ -150,5 +150,5 @@ export function getPackageDownloadUrls(req, res) {
 }
 
 export const getPackageRevisionFiles = getFiles(model.getPackageRevision)
-export const getPackageRevisionFile = getFile(model.getPackageRevision)
+export const getPackageRevisionFile = getFile(model.getPackageRevisionLevel)
 export const putPackageRevisionFile = putRevisionFile(model.getPackageRevision)

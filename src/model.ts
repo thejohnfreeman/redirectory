@@ -321,7 +321,7 @@ export async function getRelease(
   return release
 }
 
-export async function getFiles({ client }: Database, level: Level, release: Release): Promise<Assets> {
+export async function getAssets({ client }: Database, level: Level, release: Release): Promise<Assets> {
   return release.assets
 }
 
