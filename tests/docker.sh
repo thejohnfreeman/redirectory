@@ -4,6 +4,8 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
+revisions=${1:-True}
+
 image=b3607cc3d8ad
 
 sudo docker run --rm --interactive --init \
@@ -11,5 +13,5 @@ sudo docker run --rm --interactive --init \
 ${image} <<EOF
 apt install lsof
 cd redirectory
-PORT=80 VERBOSE=3 ./tests/serve.sh ./tests/test.sh
+PORT=80 VERBOSE=3 ./tests/serve.sh ./tests/test.sh ${revisions}
 EOF

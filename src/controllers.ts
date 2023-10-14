@@ -1,5 +1,6 @@
-import { parseBearer, parseRepository } from './octokit.js'
+import { newOctokit, parseBearer, parseRepository } from './octokit.js'
 import * as model from './model.js'
+import * as std from './stdlib.js'
 import jwt from 'jsonwebtoken'
 
 function mapObject(object, fn) {
@@ -13,6 +14,10 @@ const getLatest = (getRevisible) => async (req, res) => {
   res.send({ revision: id, time })
 }
 
+/*
+ * GET /v2/conans/:recipe/revisions/:rrev/packages/:package/revisions/:prev/files/:filename
+ * GET /v1/files/:recipe/:rrev/package/:package/:prev/:filename?signature&user&auth
+ */
 const getFile = (getLevel) => (req, res) => {
   const repo = parseRepository(req)
   const level = getLevel(req)
@@ -25,43 +30,92 @@ const getFiles = (getRevision) => async (req, res) => {
   const release = await model.getRelease(db, $rev)
   const assets = await model.getAssets(db, $rev.level, release)
   const files = mapObject(assets, () => ({}))
-  res.send({ files })
+  return res.send({ files })
 }
 
+/*
+ * GET /v1/conans/:recipe
+ * 200 { ":filename": ":md5", ... }
+ *
+ * GET /v1/conans/:recipe/packages/:package
+ * 200 { ":filename": ":md5", ... }
+ */
+const getFileSums = (getRevisible) => async (req, res) => {
+  const { db, $resource: $revisible } = await getRevisible(req)
+  const $rev = model.getLatestRevision($revisible)
+  const release = await model.getRelease(db, $rev)
+  const assets = await model.getAssets(db, $rev.level, release)
+  const body = mapObject(assets, ({ md5 }) => md5)
+  return res.send(body)
+}
+
+/*
+ * GET /v1/conans/:recipe/download_urls
+ * Returns the latest RREV.
+ * Must return URLs that work even with no Authorization header.
+ * GitHub browser download URLs do not require one.
+ * 200 { ":filename": "http://host:port/v1/files/:recipe/:rrev/export/:filename?signature=...", ... }
+ * 200 { ":filename": ":browser_download_url", ... }
+ *
+ * GET /v1/conans/:recipe/packages/:package/download_urls
+ * Returns the latest PREV of the latest RREV.
+ * Ignores earlier RREVs,
+ * even if they have the package but the latest RREV does not.
+ * 200 { ":filename": "http://host:port/v1/files/:recipe/:rrev/package/:package/:prev/:filename?signature=...", ... }
+ * 200 { ":filename": ":browser_download_url", ... }
+ */
 const getDownloadUrls = (getRevisible) => async (req, res) => {
   const { db, $resource: $revisible } = await getRevisible(req)
   const $rev = model.getLatestRevision($revisible)
   const release = await model.getRelease(db, $rev)
   const assets = await model.getAssets(db, $rev.level, release)
   const body = mapObject(assets, ({ url }) => url)
-  res.send(body)
-}
-
-function readStream(stream): Promise<string> {
-  return new Promise((resolve, reject) => {
-    // += is 75% faster than Array.join.
-    let data = ''
-    stream.on('data', chunk => data += chunk)
-    stream.on('end', () => resolve(data))
-    stream.on('error', error => reject(error))
-  })
+  return res.send(body)
 }
 
 const SIGNING_KEY = 'abcd1234'
 
-const getUploadUrls = async (req, res) => {
+/*
+ * POST /v1/conans/:recipe/upload_urls
+ * Must return URLs that work even with no Authorization header.
+ * TODO: Must we include the signature?
+ * Is it necessary to get the client to send the correct Content-Length header?
+ * Can we send a token with less information, e.g. just the file size?
+ * 200
+ * { ":filename": :filesize, ... }
+ * signature = jwt({
+ *   resource_path: ":recipe/0/export/:filename",
+ *   username: ":user",
+ *   filesize: :filesize,
+ *   exp: now().time() + 30m,
+ * })
+ * { ":filename": "http://host:port/v1/files/:recipe/0/export/:filename?signature", ... }
+ *
+ * POST /v1/conans/:recipe/packages/:package/upload_urls
+ * { ":filename": :filesize, ... }
+ * 200
+ * signature = jwt({
+ *   resource_path: ":recipe/0/package/:package/0/:filename",
+ *   username: ":user",
+ *   filesize: :filesize,
+ *   exp: now().time() + 30m,
+ * })
+ * { ":filename": "http://host:port/v1/files/:recipe/0/package/:package/0/:filename?signature", ... }
+ */
+const postUploadUrls = (uploadPath) => async (req, res) => {
   // Just for the check.
-  const level = model.getRecipeLevel(req)
+  model.getRecipeLevel(req)
   const { name, version, user, channel } = req.params
   const { auth, user: username } = parseBearer(req)
-  const json = await readStream(req)
+  const json = await std.readStream(req)
   const files = JSON.parse(json)
   const body = {}
   // Expires 30 minutes into the future?
   const SECONDS_PER_MINUTE = 60
   const exp = Math.floor(new Date().getTime() / 1000) + 30 * SECONDS_PER_MINUTE
   for (const filename of Object.keys(files)) {
-    const resource_path = `${name}/${version}/${user}/${channel}/0/export/${filename}`
+    const subpath = uploadPath(req)
+    const resource_path = `${name}/${version}/${user}/${channel}/0/${subpath}/${filename}`
     const filesize = files[filename]
     const token = jwt.sign({
       resource_path,
@@ -89,14 +143,7 @@ const putRevisionFile = (getRevision) => async (req, res) => {
   return res.status(201).send()
 }
 
-export async function getRecipe(req, res) {
-  const { db, $resource: $recipe } = await model.getRecipe(req)
-  const $rrev = model.getLatestRevision($recipe)
-  const release = await model.getRelease(db, $rrev)
-  const assets = await model.getAssets(db, $rrev.level, release)
-  const body = mapObject(assets, ({ md5 }) => md5)
-  return res.send(body)
-}
+export const getRecipe = getFileSums(model.getRecipe)
 
 export async function deleteRecipe(req, res) {
   const { db, $resource: $recipe } = await model.getRecipe(req)
@@ -110,7 +157,7 @@ export async function deleteRecipe(req, res) {
 
 export const getRecipeLatest = getLatest(model.getRecipe)
 export const getRecipeDownloadUrls = getDownloadUrls(model.getRecipe)
-export const getRecipeUploadUrls = getUploadUrls
+export const postRecipeUploadUrls = postUploadUrls(() => 'export')
 
 export async function getRecipeRevisions(req, res) {
   const { db, $resource: $recipe } = await model.getRecipe(req)
@@ -144,11 +191,74 @@ export async function deleteRecipeRevisionPackages(req, res) {
 
 export const getPackageLatest = getLatest(model.getPackage)
 
-export function getPackageDownloadUrls(req, res) {
-  req.params.rrev = '0'
-  return getDownloadUrls(model.getPackage)(req, res)
-}
+export const getPackage = getFileSums(model.getLatestPackage)
+export const getPackageDownloadUrls = getDownloadUrls(model.getLatestPackage)
+export const postPackageUploadUrls = postUploadUrls(
+  req => `package/${req.params.package}/0`
+)
 
 export const getPackageRevisionFiles = getFiles(model.getPackageRevision)
 export const getPackageRevisionFile = getFile(model.getPackageRevisionLevel)
 export const putPackageRevisionFile = putRevisionFile(model.getPackageRevision)
+
+/*
+ * POST /v1/conans/:recipe/packages/delete
+ * {"package_ids": [":package", ...]}
+ * 200
+ */
+export async function postRecipePackagesDelete(req, res) {
+  const { db, $resource: $recipe } = await model.getRecipe(req)
+  const $rrev = model.getLatestRevision($recipe)
+  const json = await std.readStream(req)
+  const { package_ids } = JSON.parse(json)
+  if (package_ids.length === 0) {
+    await Promise.all(model.deletePackages(db, $rrev.value))
+    $rrev.value.packages = []
+  } else {
+    const promises = package_ids.flatMap(id => {
+      const $package = model.findPackage($rrev, id)
+      $package.siblings.splice($package.index, 1)
+      return model.deletePackage(db, $package.value)
+    })
+    await Promise.all(promises)
+  }
+  await model.save(db)
+  return res.send()
+}
+
+/*
+ * GET /v1/conans/:recipe/search
+ * 200 { ":package": { "content": ":conaninfo.txt", "settings": { ... }, "options": { ... }, "full_requires": [ ... ], "recipe_hash": ":rrev" }, ... }
+ */
+export function getRecipeSearch(req, res) {
+  // TODO: Implement?
+  return res.status(501).send()
+}
+
+// TODO: Improve.
+export async function getSearch(req, res) {
+  const query = req.query.q
+  // TODO: Split name from version. For now, assume just name.
+
+  const { user, auth } = parseBearer(req)
+  const octokit = newOctokit({ auth })
+  const r1 = await octokit.rest.search.repos({
+    q: `${query} in:name topic:redirectory`,
+    sort: 'stars',
+    order: 'desc',
+  })
+
+  const results = []
+  for (const result of r1.data.items) {
+    const owner = result.owner.login
+    const repo = result.name
+    const r2 = await octokit.rest.repos.listReleases({ owner, repo })
+    for (const release of r2.data) {
+      const tag = release.tag_name
+      // TODO: Good way to translate backwards from release to reference?
+      results.push(`${repo}/${tag}@github/${owner}`)
+    }
+  }
+
+  return res.send({ results })
+}

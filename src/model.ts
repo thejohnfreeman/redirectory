@@ -6,6 +6,8 @@ import * as std from './stdlib.js'
 import { Writable, Transform } from 'node:stream'
 import { createHash } from 'node:crypto'
 
+const verbose = parseInt(process.env.VERBOSE) || 0
+
 const MIME_TYPES = {
   '.txt': 'text/plain',
   '.py': 'text/x-python',
@@ -233,24 +235,36 @@ export async function getRecipeRevision(req: express.Request, force = false):
   return { db, $resource: $rrev }
 }
 
-export async function getPackage(req: express.Request, force = false):
-  Promise<{ db: Database, $resource: Removable<Package> }>
-{
-  const { db, $resource: $rrev } = await getRecipeRevision(req, force)
-  const id = req.params.package
+export function findPackage($rrev: Resource<RecipeRevision>, id: string, force = false) {
   if (id === '0') {
-    throw http.badRequest(`invalid package ID: ${id}`)
+    throw http.badRequest(`Invalid package ID: ${id}`)
   }
-  const level = { ...$rrev.level }
-  level.type = 'Package'
-  level.tag += '@' + id
-  level.reference += ':' + id
+  const level = sublevelPackage($rrev.level, id)
   const siblings = $rrev.value.packages
   const { index, value } = getChild(level, siblings, id, force, {
     id,
     revisions: [],
   })
   const $package = { level, value, siblings, index }
+  return $package
+}
+
+export async function getLatestPackage(req: express.Request, force = false):
+  Promise<{ db: Database, $resource: Removable<Package> }>
+{
+  const { db, $resource: $recipe } = await getRecipe(req, force)
+  const $rrev = getLatestRevision($recipe)
+  const id = req.params.package
+  const $package = findPackage($rrev, id)
+  return { db, $resource: $package }
+}
+
+export async function getPackage(req: express.Request, force = false):
+  Promise<{ db: Database, $resource: Removable<Package> }>
+{
+  const { db, $resource: $rrev } = await getRecipeRevision(req, force)
+  const id = req.params.package
+  const $package = findPackage($rrev, id, force)
   return { db, $resource: $package }
 }
 
@@ -339,8 +353,6 @@ function shunt(writable: Writable) {
   })
 }
 
-const verbose = parseInt(process.env.VERBOSE) || 0
-
 export async function putFile(db: Database, release: Release, req: express.Request) {
   const { filename } = req.params
   const extension = path.extname(filename)
@@ -395,10 +407,12 @@ export async function deleteRevision(db: Database, revision: Revision) {
   }
 }
 
+export function deletePackage(db: Database, $package: Package): Promise<unknown>[] {
+  return $package.revisions.flatMap($prev => deleteRevision(db, $prev))
+}
+
 export function deletePackages(db: Database, $rrev: RecipeRevision): Promise<unknown>[] {
-  return $rrev.packages
-    .flatMap($package => $package.revisions)
-    .flatMap($prev => deleteRevision(db, $prev))
+  return $rrev.packages.flatMap($package => deletePackage(db, $package))
 }
 
 export function deleteRecipeRevision(db: Database, $rrev: RecipeRevision): Promise<unknown>[] {

@@ -60,8 +60,9 @@ wait_for() {
   tries=0
   while ! curl --silent --location --include ${1} | grep --quiet "HTTP/2 ${status}"; do
       let "tries = ${tries} + 1"
-      [ ${tries} -lt 30 ] || exit 1
-      sleep 1
+      # Calculated to take up to a minute.
+      [ ${tries} -lt 21 ] || exit 1
+      sleep $(python3 -c "print(1 + $tries / 10.0)")
   done
 }
 
@@ -74,8 +75,13 @@ conan copy ${repo}/${tag}@ github/${owner} --all
 # conan info ${reference} --json ${output}
 file=~/.conan/data/${repo}/${tag}/github/${owner}/metadata.json
 pkgid=$(<${file} jq --raw-output '.packages | keys[0]')
-prev=$(<${file} jq --raw-output ".packages[\"${pkgid}\"].revision")
-rrev=$(<${file} jq --raw-output ".packages[\"${pkgid}\"].recipe_revision")
+if [ ${revisions} == "True" ]; then
+  prev=$(<${file} jq --raw-output ".packages[\"${pkgid}\"].revision")
+  rrev=$(<${file} jq --raw-output ".packages[\"${pkgid}\"].recipe_revision")
+else
+  prev=0
+  rrev=0
+fi
 
 base_url=http://${host}/v2/conans/${repo}/${tag}/github/${owner}
 source_manifest=${base_url}/revisions/${rrev}/files/conanmanifest.txt
@@ -141,7 +147,7 @@ header RE-UPLOAD
 conan copy ${repo}/${tag}@test/test github/${owner} --all
 ${upload} --all
 wait_for ${source_manifest}
-sleep 30
+sleep 1
 wait_for ${source_manifest}
 ${upload}
 wait_for ${binary_manifest}

@@ -75,6 +75,14 @@ class Traps {
 
 const verbose = parseInt(process.env.VERBOSE) || 0
 
+export function newOctokit(options) {
+  let octokit = new Octokit(options)
+  if (verbose > 1) {
+    octokit = new Proxy(octokit, new Traps('octokit'))
+  }
+  return octokit
+}
+
 export class Client {
   constructor(
     public readonly auth: string,
@@ -86,10 +94,7 @@ export class Client {
   static new(req) {
     const { auth } = parseBearer(req)
     const { owner, name: repo } = parseRepository(req)
-    let octokit = new Octokit({ auth })
-    if (verbose > 1) {
-      octokit = new Proxy(octokit, new Traps('octokit'))
-    }
+    const octokit = newOctokit({ auth })
     return new Client(auth, owner, repo, octokit)
   }
 

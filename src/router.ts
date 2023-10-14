@@ -7,6 +7,7 @@ namespace PATHS {
   export const $recipe = '/:api/conans/:name/:version/:user/:channel'
   export const $rrev = `${$recipe}/revisions/:rrev`
   export const $package = `${$rrev}/packages/:package`
+  export const $package1 = `${$recipe}/packages/:package`
   export const $prev = `${$package}/revisions/:prev`
 }
 
@@ -59,31 +60,45 @@ router.get('/:api/users/check_credentials', async (req, res) => {
   return res.send(user)
 })
 
-router.get   (`${PATHS.$recipe}`               , controllers.getRecipe)
-router.delete(`${PATHS.$recipe}`               , controllers.deleteRecipe)
-router.get   (`${PATHS.$recipe}/digest`        , controllers.getRecipeDownloadUrls)
-router.get   (`${PATHS.$recipe}/latest`        , controllers.getRecipeLatest)
-router.get   (`${PATHS.$recipe}/revisions`     , controllers.getRecipeRevisions)
-router.get   (`${PATHS.$recipe}/download_urls` , controllers.getRecipeDownloadUrls)
-router.post  (`${PATHS.$recipe}/upload_urls`   , controllers.getRecipeUploadUrls)
-router.delete(`${PATHS.$rrev}`                 , controllers.deleteRecipeRevision)
-router.get   (`${PATHS.$rrev}/files`           , controllers.getRecipeRevisionFiles)
-router.get   (`${PATHS.$rrev}/files/:filename` , controllers.getRecipeRevisionFile)
-router.put   (`${PATHS.$rrev}/files/:filename` , controllers.putRecipeRevisionFile)
-router.delete(`${PATHS.$rrev}/packages`        , controllers.deleteRecipeRevisionPackages)
-router.get   (`${PATHS.$package}/latest`       , controllers.getPackageLatest)
-router.get   (`${PATHS.$prev}/files`           , controllers.getPackageRevisionFiles)
-router.get   (`${PATHS.$prev}/files/:filename` , controllers.getPackageRevisionFile)
-router.put   (`${PATHS.$prev}/files/:filename` , controllers.putPackageRevisionFile)
+// NOTE: Handles API v1 and v2 identically.
+router.delete(`${PATHS.$recipe}`                , controllers.deleteRecipe)
+router.get   (`${PATHS.$recipe}/latest`         , controllers.getRecipeLatest)
+router.get   (`${PATHS.$recipe}/revisions`      , controllers.getRecipeRevisions)
+router.delete(`${PATHS.$rrev}`                  , controllers.deleteRecipeRevision)
+router.get   (`${PATHS.$rrev}/files`            , controllers.getRecipeRevisionFiles)
+router.get   (`${PATHS.$rrev}/files/:filename`  , controllers.getRecipeRevisionFile)
+router.put   (`${PATHS.$rrev}/files/:filename`  , controllers.putRecipeRevisionFile)
+router.delete(`${PATHS.$rrev}/packages`         , controllers.deleteRecipeRevisionPackages)
+router.get   (`${PATHS.$package}/latest`        , controllers.getPackageLatest)
+router.get   (`${PATHS.$prev}/files`            , controllers.getPackageRevisionFiles)
+router.get   (`${PATHS.$prev}/files/:filename`  , controllers.getPackageRevisionFile)
+router.put   (`${PATHS.$prev}/files/:filename`  , controllers.putPackageRevisionFile)
 
-router.get(
-  '/:api/conans/:name/:version/:user/:channel/packages/:package/download_urls',
-  controllers.getPackageDownloadUrls,
-)
+// API v2 with revisions
+router.get   (`/:api/conans/search`             , controllers.getSearch)
+// API v1 without revisions
+router.get   (`${PATHS.$recipe}/search`         , controllers.getRecipeSearch)
+
+router.get   (`${PATHS.$recipe}`                , controllers.getRecipe)
+router.get   (`${PATHS.$recipe}/digest`         , controllers.getRecipeDownloadUrls)
+router.get   (`${PATHS.$recipe}/download_urls`  , controllers.getRecipeDownloadUrls)
+router.post  (`${PATHS.$recipe}/upload_urls`    , controllers.postRecipeUploadUrls)
 
 router.put(
   '/:api/files/:name/:version/:user/:channel/:rrev/export/:filename',
   controllers.putRecipeRevisionFile,
+)
+
+router.post  (`${PATHS.$recipe}/packages/delete`, controllers.postRecipePackagesDelete)
+
+router.get   (`${PATHS.$package1}`              , controllers.getPackage)
+router.get   (`${PATHS.$package1}/digest`       , controllers.getPackageDownloadUrls)
+router.get   (`${PATHS.$package1}/download_urls`, controllers.getPackageDownloadUrls)
+router.post  (`${PATHS.$package1}/upload_urls`  , controllers.postPackageUploadUrls)
+
+router.put(
+  '/:api/files/:name/:version/:user/:channel/:rrev/package/:package/:prev/:filename',
+  controllers.putPackageRevisionFile,
 )
 
 // The catcher for all unknown routes.
