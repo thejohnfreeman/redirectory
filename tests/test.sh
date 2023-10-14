@@ -95,19 +95,26 @@ if ! ${remove} --remote ${remote}; then
   expect "ERROR: 404: Not Found."
 fi
 wait_for ${source_manifest} 404
-sleep 1
+sleep 10
 wait_for ${source_manifest} 404
 
 header BUILD FROM SOURCE
 ${upload}
 ${remove}
 wait_for ${source_manifest}
-sleep 1
+sleep 10
+wait_for ${source_manifest}
+sleep 10
 wait_for ${source_manifest}
 capture
 ! ${install}
 expect "ERROR: Missing prebuilt package for '${reference}'" \
   || expect "ERROR: ${reference} was not found in remote '${remote}'"
+wait_for ${source_manifest}
+sleep 10
+wait_for ${source_manifest}
+sleep 10
+wait_for ${source_manifest}
 ${install} --build missing
 build
 
@@ -115,7 +122,9 @@ header BUILD FROM BINARY
 ${upload} --all
 ${remove}
 wait_for ${binary_manifest}
-sleep 1
+sleep 10
+wait_for ${binary_manifest}
+sleep 10
 wait_for ${binary_manifest}
 ${install}
 build
@@ -123,9 +132,9 @@ build
 header BUILD FROM SOURCE AGAIN
 ${remove} --remote ${remote} --packages
 ${remove}
-wait_for ${source_manifest}
-sleep 1
-wait_for ${source_manifest}
+wait_for ${binary_manifest} 404
+sleep 10
+wait_for ${binary_manifest} 404
 capture
 ! ${install}
 expect "ERROR: Missing prebuilt package for '${reference}'"
@@ -147,11 +156,17 @@ header RE-UPLOAD
 conan copy ${repo}/${tag}@test/test github/${owner} --all
 ${upload} --all
 wait_for ${source_manifest}
-sleep 1
+sleep 30
+wait_for ${source_manifest}
+sleep 10
+wait_for ${source_manifest}
+sleep 10
 wait_for ${source_manifest}
 ${upload}
 wait_for ${binary_manifest}
-sleep 1
+sleep 10
+wait_for ${binary_manifest}
+sleep 10
 wait_for ${binary_manifest}
 ${upload} --all
 # TODO: Use default token for read-only commands.
