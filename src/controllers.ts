@@ -132,8 +132,9 @@ const postUploadUrls = (uploadPath) => async (req, res) => {
 }
 
 const putRevisionFile = (getRevision) => async (req, res) => {
-  const { db, $resource: $rev } = await getRevision(req, /*force=*/true)
-  const release = await model.getRelease(db, $rev, /*force=*/true)
+  const mode = model.Mode.Create
+  const { db, $resource: $rev } = await getRevision(req, mode)
+  const release = await model.getRelease(db, $rev, mode)
   const data = await model.putFile(db, release, req)
   release.assets[data.name] = {
     md5: data.md5,
@@ -146,7 +147,8 @@ const putRevisionFile = (getRevision) => async (req, res) => {
 export const getRecipe = getFileSums(model.getRecipe)
 
 export async function deleteRecipe(req, res) {
-  const { db, $resource: $recipe } = await model.getRecipe(req)
+  const mode = model.Mode.ReadWrite
+  const { db, $resource: $recipe } = await model.getRecipe(req,mode)
 
   await Promise.all(model.deleteRecipe(db, $recipe.value))
   $recipe.value.revisions = []
@@ -166,7 +168,8 @@ export async function getRecipeRevisions(req, res) {
 }
 
 export async function deleteRecipeRevision(req, res) {
-  const { db, $resource: $rrev } = await model.getRecipeRevision(req)
+  const mode = model.Mode.ReadWrite
+  const { db, $resource: $rrev } = await model.getRecipeRevision(req, mode)
 
   await Promise.all(model.deleteRecipeRevision(db, $rrev.value))
   $rrev.siblings.splice($rrev.index, 1)
@@ -180,7 +183,8 @@ export const getRecipeRevisionFile = getFile(model.getRecipeRevisionLevel)
 export const putRecipeRevisionFile = putRevisionFile(model.getRecipeRevision)
 
 export async function deleteRecipeRevisionPackages(req, res) {
-  const { db, $resource: $rrev } = await model.getRecipeRevision(req)
+  const mode = model.Mode.ReadWrite
+  const { db, $resource: $rrev } = await model.getRecipeRevision(req, mode)
 
   await Promise.all(model.deletePackages(db, $rrev.value))
   $rrev.value.packages = []
@@ -207,7 +211,8 @@ export const putPackageRevisionFile = putRevisionFile(model.getPackageRevision)
  * 200
  */
 export async function postRecipePackagesDelete(req, res) {
-  const { db, $resource: $recipe } = await model.getRecipe(req)
+  const mode = model.Mode.ReadWrite
+  const { db, $resource: $recipe } = await model.getRecipe(req, mode)
   const $rrev = model.getLatestRevision($recipe)
   const json = await std.readStream(req)
   const { package_ids } = JSON.parse(json)

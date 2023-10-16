@@ -137,10 +137,19 @@ export function getPackageRevisionLevel(req: express.Request): Level {
   return sublevelRevision(level, req.params.prev)
 }
 
-export async function getRecipe(req: express.Request, force = false):
+export enum Mode {
+  // Get the resource for reading only.
+  ReadOnly,
+  // Get the resource for writing too.
+  ReadWrite,
+  // Create the resource if it does not exist. Implies writing.
+  Create,
+}
+
+export async function getRecipe(req: express.Request, mode = Mode.ReadOnly):
   Promise<{ db: Database, $resource: Resource<Recipe> }>
 {
-  const client = Client.new(req, /*readwrite=*/force)
+  const client = Client.new(req, /*write=*/mode > Mode.ReadOnly)
   const level = getRecipeLevel(req)
 
   let release
@@ -155,7 +164,7 @@ export async function getRecipe(req: express.Request, force = false):
 
   const r1 = await client.getReleaseByTag(level.tag).catch(getResponse)
   if (r1.status !== 200) {
-    if (!force) {
+    if (mode !== Mode.Create) {
       throw missing(level)
     }
 
@@ -204,11 +213,11 @@ export async function save({ client, root }: Database) {
 }
 
 function getChild<T extends { id: string }>(
-  level: Level, children: T[], id: string, force: boolean, child: T,
+  level: Level, children: T[], id: string, mode: Mode, child: T,
 ): { index: number, value: T } {
   let index = children.findIndex(child => child.id === id)
   if (index < 0) {
-    if (!force) {
+    if (mode !== Mode.Create) {
       throw missing(level)
     }
     index = children.length
@@ -218,14 +227,14 @@ function getChild<T extends { id: string }>(
   return { index, value }
 }
 
-export async function getRecipeRevision(req: express.Request, force = false):
+export async function getRecipeRevision(req: express.Request, mode = Mode.ReadOnly):
   Promise<{ db: Database, $resource: Removable<RecipeRevision> }>
 {
-  const { db, $resource: $recipe } = await getRecipe(req, force)
+  const { db, $resource: $recipe } = await getRecipe(req, mode)
   const id = req.params.rrev
   const level = sublevelRevision($recipe.level, id)
   const siblings = $recipe.value.revisions
-  const { index, value } = getChild(level, siblings, id, force, {
+  const { index, value } = getChild(level, siblings, id, mode, {
     id,
     time: std.nowString(),
     packages: [],
@@ -234,13 +243,13 @@ export async function getRecipeRevision(req: express.Request, force = false):
   return { db, $resource: $rrev }
 }
 
-export function findPackage($rrev: Resource<RecipeRevision>, id: string, force = false) {
+export function findPackage($rrev: Resource<RecipeRevision>, id: string, mode = Mode.ReadOnly) {
   if (id === '0') {
     throw http.badRequest(`Invalid package ID: ${id}`)
   }
   const level = sublevelPackage($rrev.level, id)
   const siblings = $rrev.value.packages
-  const { index, value } = getChild(level, siblings, id, force, {
+  const { index, value } = getChild(level, siblings, id, mode, {
     id,
     revisions: [],
   })
@@ -248,33 +257,33 @@ export function findPackage($rrev: Resource<RecipeRevision>, id: string, force =
   return $package
 }
 
-export async function getLatestPackage(req: express.Request, force = false):
+export async function getLatestPackage(req: express.Request):
   Promise<{ db: Database, $resource: Removable<Package> }>
 {
-  const { db, $resource: $recipe } = await getRecipe(req, force)
+  const { db, $resource: $recipe } = await getRecipe(req)
   const $rrev = getLatestRevision($recipe)
   const id = req.params.package
   const $package = findPackage($rrev, id)
   return { db, $resource: $package }
 }
 
-export async function getPackage(req: express.Request, force = false):
+export async function getPackage(req: express.Request, mode = Mode.ReadOnly):
   Promise<{ db: Database, $resource: Removable<Package> }>
 {
-  const { db, $resource: $rrev } = await getRecipeRevision(req, force)
+  const { db, $resource: $rrev } = await getRecipeRevision(req, mode)
   const id = req.params.package
-  const $package = findPackage($rrev, id, force)
+  const $package = findPackage($rrev, id, mode)
   return { db, $resource: $package }
 }
 
-export async function getPackageRevision(req: express.Request, force = false):
+export async function getPackageRevision(req: express.Request, mode = Mode.ReadOnly):
   Promise<{ db: Database, $resource: Removable<PackageRevision> }>
 {
-  const { db, $resource: $package } = await getPackage(req, force)
+  const { db, $resource: $package } = await getPackage(req, mode)
   const id = req.params.prev
   const level = sublevelRevision($package.level, id)
   const siblings = $package.value.revisions
-  const { index, value } = getChild(level, siblings, id, force, {
+  const { index, value } = getChild(level, siblings, id, mode, {
     id,
     time: std.nowString(),
   })
@@ -308,14 +317,14 @@ export function getRevisions($revisible: Resource<Revisible>): { revision: strin
 }
 
 export async function getRelease(
-  db: Database, $revision: Resource<Revision>, force = false,
+  db: Database, $revision: Resource<Revision>, mode = Mode.ReadOnly,
 ): Promise<Release> {
   let release = $revision.value.release
   if (!release) {
     let data: { id: number, upload_url: string }
     if ($revision.value.id === '0' && $revision.level.type === 'Recipe') {
       data = db.root.release
-    } else if (!force) {
+    } else if (mode !== Mode.Create) {
       throw http.notFound(`Missing release: ${$revision.level.reference}`)
     } else {
       let r1 = await db.client.createRelease($revision.level.tag).catch(getResponse)
