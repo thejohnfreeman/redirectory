@@ -2,6 +2,21 @@ import express from 'express'
 import { parseBearer } from './octokit.js'
 import * as controllers from './controllers.js'
 import * as http from './http.js'
+import winston from 'winston'
+import expressWinston from 'express-winston'
+
+const verbose = parseInt(process.env.VERBOSE) || 0
+
+expressWinston.requestWhitelist.push('body')
+expressWinston.responseWhitelist.push('headers', 'body')
+const winstonOptions = {
+  transports: [
+    new winston.transports.Console()
+  ],
+  format: winston.format.combine(
+    winston.format.prettyPrint(),
+  ),
+}
 
 namespace PATHS {
   export const $recipe = '/:api/conans/:name/:version/:user/:channel'
@@ -12,6 +27,10 @@ namespace PATHS {
 }
 
 const router = express.Router()
+
+if (verbose > 0) {
+  router.use(expressWinston.logger(winstonOptions))
+}
 
 router.get('/:api/ping', (req, res) => {
   res.set('X-Conan-Server-Capabilities', 'complex_search,revisions').send()
@@ -103,13 +122,16 @@ router.put(
 
 // The catcher for all unknown routes.
 router.all('*', (req, res) => {
-  console.log(req.method, req.originalUrl)
+  console.warn('unknown route', req.method, req.originalUrl)
   res.status(501).send()
 })
 
+if (verbose == 0) {
+  router.use(expressWinston.errorLogger(winstonOptions))
+}
+
 // The catcher for all uncaught exceptions.
 router.use((err, req, res, next) => {
-  console.error(err)
   if (err instanceof http.Error) {
     return res.status(err.code).send(err.message)
   }
