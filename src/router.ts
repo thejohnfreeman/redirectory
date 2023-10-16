@@ -120,6 +120,10 @@ router.put(
   controllers.putPackageRevisionFile,
 )
 
+router.get('/', (req, res) => {
+  return res.redirect(301, 'https://github.com/thejohnfreeman/redirectory')
+})
+
 // The catcher for all unknown routes.
 router.all('*', (req, res) => {
   console.warn('unknown route', req.method, req.originalUrl)

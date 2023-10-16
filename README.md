@@ -81,7 +81,7 @@ and revoking the old one.
 ## Configure
 
 First, add the Redirectory server you want to use.
-My free public server is `https://conan.jfreeman.dev`.
+My free public server is https://conan.jfreeman.dev.
 
 ```
 conan remote add redirectory ${url}
