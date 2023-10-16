@@ -5,12 +5,12 @@ set -o errexit
 set -o pipefail
 set -o xtrace
 
-revisions=${1:-True}
+revisions=${REVISIONS:-True}
+remote=${REMOTE:-redirectory}
 
 owner=thejohnfreeman
 repo=zlib
 tag=1.2.13
-remote=redirectory
 host=localhost
 
 reference=${repo}/${tag}@github/${owner}
@@ -55,37 +55,11 @@ build() {
   popd
 }
 
-wait_for() {
-  status=${2:-200}
-  tries=0
-  while ! curl --silent --location --include ${1} | grep --quiet "HTTP/2 ${status}"; do
-      let "tries = ${tries} + 1"
-      # Calculated to take up to a minute.
-      [ ${tries} -lt 21 ] || exit 1
-      sleep $(python3 -c "print(1 + $tries / 10.0)")
-  done
-}
-
 output=$(mktemp)
 trap "rm -f ${output}" EXIT
 
 conan config set general.revisions_enabled=${revisions}
 conan copy ${repo}/${tag}@ github/${owner} --all
-
-# conan info ${reference} --json ${output}
-file=~/.conan/data/${repo}/${tag}/github/${owner}/metadata.json
-pkgid=$(<${file} jq --raw-output '.packages | keys[0]')
-if [ ${revisions} == "True" ]; then
-  prev=$(<${file} jq --raw-output ".packages[\"${pkgid}\"].revision")
-  rrev=$(<${file} jq --raw-output ".packages[\"${pkgid}\"].recipe_revision")
-else
-  prev=0
-  rrev=0
-fi
-
-base_url=http://${host}/v2/conans/${repo}/${tag}/github/${owner}
-source_manifest=${base_url}/revisions/${rrev}/files/conanmanifest.txt
-binary_manifest=${base_url}/revisions/${rrev}/packages/${pkgid}/revisions/${prev}/files/conanmanifest.txt
 
 conan user --remote ${remote} ${owner} --password $(cat github.token)
 
@@ -93,48 +67,33 @@ header RESET
 capture
 if ! ${remove} --remote ${remote}; then
   expect "ERROR: 404: Not Found."
+else
+  sleep 60
 fi
-wait_for ${source_manifest} 404
-sleep 10
-wait_for ${source_manifest} 404
 
 header BUILD FROM SOURCE
 ${upload}
 ${remove}
-wait_for ${source_manifest}
-sleep 10
-wait_for ${source_manifest}
-sleep 10
-wait_for ${source_manifest}
+sleep 60
 capture
 ! ${install}
 expect "ERROR: Missing prebuilt package for '${reference}'" \
   || expect "ERROR: ${reference} was not found in remote '${remote}'"
-wait_for ${source_manifest}
-sleep 10
-wait_for ${source_manifest}
-sleep 10
-wait_for ${source_manifest}
+sleep 60
 ${install} --build missing
 build
 
 header BUILD FROM BINARY
 ${upload} --all
 ${remove}
-wait_for ${binary_manifest}
-sleep 10
-wait_for ${binary_manifest}
-sleep 10
-wait_for ${binary_manifest}
+sleep 60
 ${install}
 build
 
 header BUILD FROM SOURCE AGAIN
 ${remove} --remote ${remote} --packages
 ${remove}
-wait_for ${binary_manifest} 404
-sleep 10
-wait_for ${binary_manifest} 404
+sleep 60
 capture
 ! ${install}
 expect "ERROR: Missing prebuilt package for '${reference}'"
@@ -155,23 +114,11 @@ expect "ERROR: 404: Not Found."
 header RE-UPLOAD
 conan copy ${repo}/${tag}@test/test github/${owner} --all
 ${upload} --all
-wait_for ${source_manifest}
-sleep 30
-wait_for ${source_manifest}
-sleep 10
-wait_for ${source_manifest}
-sleep 10
-wait_for ${source_manifest}
-${upload}
-wait_for ${binary_manifest}
-sleep 10
-wait_for ${binary_manifest}
-sleep 10
-wait_for ${binary_manifest}
+sleep 60
 ${upload} --all
 # TODO: Use default token for read-only commands.
-# conan user --clean
-# ${remove}
-# ${install}
+conan user --clean
+${remove}
+${install}
 
 header PASSED!
