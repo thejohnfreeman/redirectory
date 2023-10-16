@@ -47,7 +47,7 @@ router.get('/:api/users/check_credentials', async (req, res) => {
   // This function is called many times.
   // For now, we disable the call to GitHub to save on traffic costs.
   /*
-     const octokit = newOctokit({ auth })
+     const { octokit } = newOctokit(req)
      const r1 = await octokit.rest.users.getAuthenticated()
      if (r1.status !== 200) {
      return res.status(401).send('Invalid GitHub token')

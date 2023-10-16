@@ -141,7 +141,7 @@ export function getPackageRevisionLevel(req: express.Request): Level {
 export async function getRecipe(req: express.Request, force = false):
   Promise<{ db: Database, $resource: Resource<Recipe> }>
 {
-  const client = Client.new(req)
+  const client = Client.new(req, /*readwrite=*/force)
   const level = getRecipeLevel(req)
 
   let release

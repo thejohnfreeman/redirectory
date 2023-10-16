@@ -1,6 +1,7 @@
 /package-lock.json
 /node_modules/
 /github.token
+/oauth.json
 /dist/
 /redirectory.pcap
 /redirectory.server.log

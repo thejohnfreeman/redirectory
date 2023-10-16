@@ -13,6 +13,7 @@
   "author": "John Freeman <jfreeman08@gmail.com>",
   "license": "ISC",
   "dependencies": {
+    "@octokit/auth-oauth-app": "^7.0.1",
     "express": "^5.0.0-beta.1",
     "express-winston": "^4.2.0",
     "jsonwebtoken": "^9.0.2",

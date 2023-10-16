@@ -1,4 +1,6 @@
 .gcloudignore
 .git
 .gitignore
+/tests/
 #!include:.gitignore
+!oauth.json

@@ -1,9 +1,25 @@
+import fs from 'fs'
 import { Octokit } from 'octokit'
 import { badRequest } from './http.js'
+import { createOAuthAppAuth } from '@octokit/auth-oauth-app'
 
 function unbase64(input) {
   return Buffer.from(input, 'base64').toString('ascii')
 }
+
+function defaultOctokit(): Octokit | undefined {
+  let contents
+  try {
+    contents = fs.readFileSync('oauth.json')
+  } catch (cause) {
+    return
+  }
+  const auth = JSON.parse(contents)
+  const kit = new Octokit({ authStrategy: createOAuthAppAuth, auth })
+  return kit
+}
+
+const DEFAULT_OCTOKIT = defaultOctokit()
 
 /**
  * In the Authorization header, the bearer token is the base64-encoded string
@@ -75,27 +91,35 @@ class Traps {
 
 const verbose = parseInt(process.env.VERBOSE) || 0
 
-export function newOctokit(options) {
-  let octokit = new Octokit(options)
+export function newOctokit(req, readwrite = false) {
+  let user = '<anonymous>'
+  let auth = undefined
+  try {
+    let { user, auth } = parseBearer(req)
+  } catch (cause) {
+    if (readwrite) {
+      throw cause
+    }
+  }
+  let octokit = auth ? new Octokit({ auth }) : DEFAULT_OCTOKIT
   if (verbose > 1) {
     octokit = new Proxy(octokit, new Traps('octokit'))
   }
-  return octokit
+  return { user, auth, octokit }
 }
 
 export class Client {
   constructor(
-    public readonly auth: string,
     public readonly owner: string,
     public readonly repo: string,
     private octokit: Octokit,
+    public readonly auth?: string,
   ) {}
 
-  static new(req) {
-    const { auth } = parseBearer(req)
+  static new(req, readwrite = false) {
     const { owner, name: repo } = parseRepository(req)
-    const octokit = newOctokit({ auth })
-    return new Client(auth, owner, repo, octokit)
+    const { auth, octokit } = newOctokit(req, readwrite)
+    return new Client(owner, repo, octokit, auth)
   }
 
   getRelease(id: number) {

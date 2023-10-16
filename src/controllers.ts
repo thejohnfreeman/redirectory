@@ -240,8 +240,7 @@ export async function getSearch(req, res) {
   const query = req.query.q
   // TODO: Split name from version. For now, assume just name.
 
-  const { user, auth } = parseBearer(req)
-  const octokit = newOctokit({ auth })
+  const { octokit } = newOctokit(req)
   const r1 = await octokit.rest.search.repos({
     q: `${query} in:name topic:redirectory`,
     sort: 'stars',
