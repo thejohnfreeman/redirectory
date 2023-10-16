@@ -79,7 +79,6 @@ capture
 ! ${install}
 expect "ERROR: Missing prebuilt package for '${reference}'" \
   || expect "ERROR: ${reference} was not found in remote '${remote}'"
-sleep 60
 ${install} --build missing
 build
 
@@ -104,6 +103,7 @@ header RE-REMOVE
 ${remove} --remote ${remote}
 conan copy ${reference} test/test --all --force
 ${remove}
+sleep 60
 capture
 ! ${install} --build missing
 expect "ERROR: ${reference} was not found in remote '${remote}'"
@@ -116,7 +116,8 @@ conan copy ${repo}/${tag}@test/test github/${owner} --all
 ${upload} --all
 sleep 60
 ${upload} --all
-# TODO: Use default token for read-only commands.
+
+header UNAUTHENTICATED
 conan user --clean
 ${remove}
 ${install}

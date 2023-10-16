@@ -30,7 +30,7 @@ For example, the package `cupcake/0.2.0@github/thejohnfreeman`
 is hosted at the GitHub project [`thejohnfreeman/cupcake`][1].
 
 In the spirit of [PyPI], [NPM], [crates.io], and [Hackage],
-I run a **free public Redirectory server** at `https://conan.jfreeman.dev`
+I run a **free public Redirectory server** at https://conan.jfreeman.dev
 to let open source developers like myself publish and share packages
 free from the responsibility of operating a package server[^4].
 
