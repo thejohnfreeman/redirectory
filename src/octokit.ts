@@ -95,7 +95,7 @@ export function newOctokit(req, readwrite = false) {
   let user = '<anonymous>'
   let auth = undefined
   try {
-    let { user, auth } = parseBearer(req)
+    ({ user, auth } = parseBearer(req))
   } catch (cause) {
     if (readwrite) {
       throw cause
