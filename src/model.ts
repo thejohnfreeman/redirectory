@@ -3,7 +3,6 @@ import path from 'path'
 import * as http from './http.js'
 import { Client, getResponse, Repository } from './octokit.js'
 import * as std from './stdlib.js'
-import { Writable, Transform } from 'node:stream'
 import { createHash } from 'node:crypto'
 
 const verbose = parseInt(process.env.VERBOSE) || 0
@@ -344,22 +343,13 @@ export function getFile(repo: Repository, level: Level, filename: string): strin
   return `https://github.com/${repo.owner}/${repo.name}/releases/download/${encodeURIComponent(level.tag)}/${filename}`
 }
 
-function shunt(writable: Writable) {
-  return new Transform({
-    transform(chunk, encoding, callback) {
-      this.push(chunk, encoding)
-      writable.write(chunk, encoding, callback)
-    }
-  })
-}
-
 export async function putFile(db: Database, release: Release, req: express.Request) {
   const { filename } = req.params
   const extension = path.extname(filename)
   const mimeType = MIME_TYPES[extension] || 'application/octet-stream'
 
   const hash = createHash('md5')
-  const body = req.pipe(shunt(hash))
+  const body = req.pipe(std.shunt(hash))
 
   const url = `${release.origin}/repos/${db.client.owner}/${db.client.repo}/releases/${release.id}/assets?name=${filename}`
   const headers = {

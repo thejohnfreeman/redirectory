@@ -1,4 +1,5 @@
 import { strict as assert } from 'node:assert'
+import { Writable, Transform } from 'node:stream'
 
 export function nowString() {
   return new Date().toISOString()
@@ -40,6 +41,15 @@ export function parseJsonPrefix(text: string) {
     text = text.substr(0, match[1])
   }
   return JSON.parse(text)
+}
+
+export function shunt(writable: Writable) {
+  return new Transform({
+    transform(chunk, encoding, callback) {
+      this.push(chunk, encoding)
+      writable.write(chunk, encoding, callback)
+    }
+  })
 }
 
 export function readStream(stream): Promise<string> {
