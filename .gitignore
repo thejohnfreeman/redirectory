@@ -3,5 +3,4 @@
 /github.token
 /oauth.json
 /dist/
-/redirectory.pcap
-/redirectory.server.log
+/server.log
