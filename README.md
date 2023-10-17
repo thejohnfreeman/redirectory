@@ -146,7 +146,7 @@ You must wait for GitHub to percolate the asset state
 across its load balancer.
 In my experience, this can take up to 60 seconds.
 
-If you want your package to be discoverable through `conan search`,
+If you want your package to be [discoverable][4] through `conan search`,
 then you'll need to add `redirectory` as a [topic] on your repository.
 
 
@@ -166,3 +166,4 @@ then you'll need to add `redirectory` as a [topic] on your repository.
 [1]: https://github.com/thejohnfreeman/cupcake/releases
 [2]: https://github.com/settings/tokens?type=beta
 [3]: https://docs.github.com/en/rest/overview/resources-in-the-rest-api?apiVersion=2022-11-28#rate-limiting
+[4]: https://github.com/topics/redirectory
