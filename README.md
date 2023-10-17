@@ -32,11 +32,16 @@ is hosted at the GitHub project [`thejohnfreeman/cupcake`][1].
 In the spirit of [PyPI], [NPM], [crates.io], and [Hackage],
 I run a **free public Redirectory server** at https://conan.jfreeman.dev
 to let open source developers like myself publish and share packages
-free from the responsibility of operating a package server[^4].
+without the gatekeeping of [Conan Center][][^5]
+but free from the responsibility of operating a package server[^4].
 
 [^4]: If you do not trust my server with your PAT,
 I will soon add instructions for how you can run your own Redirectory server
 for free on Google Cloud App Engine, just like I do.
+
+[^5]: I love Conan Center,
+but I still want a frictionless package registry
+like I enjoy in other languages.
 
 > :warning: **NOTE** :warning:
 > These instructions have not been written or tested for Conan 2, but I expect them to work much the same.
@@ -87,7 +92,7 @@ My free public server is https://conan.jfreeman.dev.
 conan remote add redirectory ${url}
 ```
 
-Second, you can authenticate to the server using a
+Second, you can optionally authenticate to the server using a
 [GitHub Personal Access Token (PAT)][PAT]
 (see [Authentication](#authentication)).
 Redirectory does not store this token[^1].
@@ -156,6 +161,7 @@ then you'll need to add `redirectory` as a [topic] on your repository.
 [crates.io]: https://crates.io/
 [Hackage]: https://hackage.haskell.org/
 [revision]: https://docs.conan.io/1/versioning/revisions.html
+[Conan Center]: https://conan.io/center
 
 [1]: https://github.com/thejohnfreeman/cupcake/releases
 [2]: https://github.com/settings/tokens?type=beta
