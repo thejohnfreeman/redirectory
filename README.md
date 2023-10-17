@@ -8,7 +8,7 @@ From the perspective of a Conan client,
 it is meant to be a drop-in replacement for [Artifactory].
 
 Redirectory works by using GitHub [releases] as free public storage.
-Uploading recipes and packages creates releases in a GitHub project
+Uploading recipes and packages creates releases in a GitHub repository
 based on the package reference and attaches files as assets[^2].
 Every [revision] of a recipe or package gets its own release[^3].
 Installing recipes and packages
@@ -25,9 +25,9 @@ exactly one revision with ID `0`.
 Redirectory packages are clearly identified by their references.
 Conan package references have the form `${name}/${version}@${user}/${channel}`.
 Redirectory packages always have the user `github`
-and are hosted at the GitHub project `${name}` owned by `${channel}`.
+and are hosted at the GitHub repository `${name}` owned by `${channel}`.
 For example, the package `cupcake/0.2.0@github/thejohnfreeman`
-is hosted at the GitHub project [`thejohnfreeman/cupcake`][1].
+is hosted at the GitHub repository [`thejohnfreeman/cupcake`][1].
 
 In the spirit of [PyPI], [NPM], [crates.io], and [Hackage],
 I run a **free public Redirectory server** at https://conan.jfreeman.dev
