@@ -117,7 +117,8 @@ export function getRecipeLevel(req: express.Request): Level {
   const { name, version, user, channel } = req.params
   const reference = `${name}/${version}@${user}/${channel}`
   if (user !== 'github') {
-    throw http.forbidden(`Not a GitHub package: '${reference}'`)
+    // Cannot return 403 Forbidden or else Conan thinks we have the package.
+    throw http.notFound(`Not a GitHub package: '${reference}'`)
   }
   return { type: 'Recipe', tag: version, reference }
 }
