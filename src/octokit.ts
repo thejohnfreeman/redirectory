@@ -14,6 +14,7 @@ const DEFAULT_OCTOKIT = (() => {
   try {
     contents = fs.readFileSync('oauth.json')
   } catch (cause) {
+    console.error('cannot read oauth.json', cause)
     return
   }
   const auth = JSON.parse(contents)
@@ -70,8 +71,8 @@ class Traps {
 
   get(target, property) {
     return new Proxy(
-        Reflect.get(target, property),
-        new Traps(this.path + '.' + property),
+      Reflect.get(target, property),
+      new Traps(this.path + '.' + property),
     )
   }
 
@@ -169,5 +170,4 @@ export class Client {
       asset_id: id,
     })
   }
-
 }

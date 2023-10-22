@@ -5,12 +5,13 @@ set -o errexit
 set -o pipefail
 set -o xtrace
 
+conan=${CONAN:-1}
 revisions=${REVISIONS:-True}
 remote=${REMOTE:-redirectory}
 
 owner=thejohnfreeman
 repo=zlib
-tag=1.2.13
+tag=0.1.0
 host=localhost
 
 reference=${repo}/${tag}@github/${owner}
@@ -34,8 +35,16 @@ header() {
   set -o xtrace
 }
 
+output=$(mktemp)
+trap "rm -f ${output}" EXIT
+
+# We only need to capture stderr.
 capture() {
-  exec 2> >(tee ${output})
+  set +o xtrace
+  exec 4>&2 2> >(tee ${output})
+  "$@"
+  exec 2>&4
+  set -o xtrace
 }
 
 expect() {
@@ -43,29 +52,27 @@ expect() {
 }
 
 build() {
-  root="$(pwd)/tests/example"
+  root="$(pwd)/tests/packages/executable"
   dir="$(mktemp -d)"
   trap "rm -rf ${dir}" RETURN
   pushd ${dir}
   conan install --remote ${remote} ${root}
   cmake -DCMAKE_TOOLCHAIN_FILE=conan_toolchain.cmake -DCMAKE_BUILD_TYPE=Release ${root}
   cmake --build .
-  ./main | tee ${output}
-  expect 'hello, hello!'
+  ./executable | tee ${output}
+  expect 'answer? 42'
   popd
 }
 
-output=$(mktemp)
-trap "rm -f ${output}" EXIT
-
 conan config set general.revisions_enabled=${revisions}
-conan copy ${repo}/${tag}@ github/${owner} --all
-
 conan user --remote ${remote} ${owner} --password $(cat github.token)
 
+header EXPORT TO CACHE
+conan create tests/packages/library
+build
+
 header RESET
-capture
-if ! ${remove} --remote ${remote}; then
+if ! capture ${remove} --remote ${remote}; then
   expect "ERROR: 404: Not Found."
 else
   sleep 60
@@ -75,8 +82,7 @@ header BUILD FROM SOURCE
 ${upload}
 ${remove}
 sleep 60
-capture
-! ${install}
+! capture ${install}
 expect "ERROR: Missing prebuilt package for '${reference}'" \
   || expect "ERROR: ${reference} was not found in remote '${remote}'"
 ${install} --build missing
@@ -93,26 +99,22 @@ header BUILD FROM SOURCE AGAIN
 ${remove} --remote ${remote} --packages
 ${remove}
 sleep 60
-capture
-! ${install}
+! capture ${install}
 expect "ERROR: Missing prebuilt package for '${reference}'"
 ${install} --build missing
 build
 
 header RE-REMOVE
 ${remove} --remote ${remote}
-conan copy ${reference} test/test --all --force
 ${remove}
 sleep 60
-capture
-! ${install} --build missing
+! capture ${install} --build missing
 expect "ERROR: ${reference} was not found in remote '${remote}'"
-capture
-! ${remove} --remote ${remote}
+! capture ${remove} --remote ${remote}
 expect "ERROR: 404: Not Found."
 
 header RE-UPLOAD
-conan copy ${repo}/${tag}@test/test github/${owner} --all
+conan create tests/packages/library
 ${upload} --all
 sleep 60
 ${upload} --all
