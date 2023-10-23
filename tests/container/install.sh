@@ -86,7 +86,7 @@ cd ..
 rm --recursive --force ${cmake_slug}
 
 # Install Conan and PyTest.
-pip3 install conan==${conan_version} pytest cupcake
+pip3 install conan==${conan_version} pytest
 
 conan config set general.retry=0
 conan config set general.retry_wait=0
@@ -98,9 +98,6 @@ conan profile update settings.compiler.libcxx=libstdc++11 default
 conan profile update settings.compiler.cppstd=20 default
 conan profile update env.CC=/usr/bin/gcc default
 conan profile update env.CXX=/usr/bin/g++ default
-
-conan remote add redirectory http://localhost
-conan remote add gcloud https://conan.jfreeman.dev
 
 # Clean up.
 apt clean

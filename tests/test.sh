@@ -7,7 +7,7 @@ set -o xtrace
 
 conan=${CONAN:-1}
 revisions=${REVISIONS:-True}
-remote=${REMOTE:-redirectory}
+remote=${REMOTE:-http://localhost}
 
 owner=thejohnfreeman
 repo=zlib
@@ -18,14 +18,8 @@ reference=${repo}/${tag}@github/${owner}
 
 # Preconditions
 # =============
-# 1. Package ${repo}/${tag}@github/${owner} is built in the local cache.
-# 2. Revisions are enabled or disabled.
-# 3. `github.token` exists in the current directory.
-# 4. Remote ${remote} is enabled.
-
-upload="conan upload --remote ${remote} ${reference}"
-install="conan install --remote ${remote} ${reference}"
-remove="conan remove --force ${reference}"
+# 1. `github.token` exists in the current directory.
+# 2. `oauth.json` exists in the current directory.
 
 header() {
   set +o xtrace
@@ -56,7 +50,7 @@ build() {
   dir="$(mktemp -d)"
   trap "rm -rf ${dir}" RETURN
   pushd ${dir}
-  conan install --remote ${remote} ${root}
+  conan install --remote redirectory ${root}
   cmake -DCMAKE_TOOLCHAIN_FILE=conan_toolchain.cmake -DCMAKE_BUILD_TYPE=Release ${root}
   cmake --build .
   ./executable | tee ${output}
@@ -64,40 +58,65 @@ build() {
   popd
 }
 
-conan config set general.revisions_enabled=${revisions}
-conan user --remote ${remote} ${owner} --password $(cat github.token)
+conan remote add redirectory ${remote}
+
+if [ ${conan} -eq 1 ]; then
+  conan config set general.revisions_enabled=${revisions}
+  conan user --remote redirectory ${owner} --password $(cat github.token)
+  logout="conan user --clean"
+  export="conan create tests/packages/library github/${owner}"
+  remove_all="conan remove --force ${reference}"
+  remove_packages="${remove_all} --packages"
+  upload_recipe="conan upload --remote redirectory ${reference}"
+  upload_all="${upload_recipe} --all"
+  install="conan install --remote redirectory ${reference}"
+elif [ ${conan} -eq 2 ]; then
+  conan profile detect
+  # Cannot edit profile with Conan commands in Conan 2.
+  conan remote login redirectory ${owner} --password $(cat github.token)
+  logout="conan remote logout redirectory"
+  export="conan create tests/packages/library --user github --channel ${owner}"
+  remove_all="conan remove --confirm ${reference}"
+  remove_packages="${remove_all}:*"
+  upload_all="conan upload --remote redirectory --confirm ${reference}"
+  upload_recipe="${upload_all} --only-recipe"
+  install="conan install --remote redirectory --requires ${reference}"
+else
+  echo "unknown Conan version: ${conan}"
+  exit 1
+fi
 
 header EXPORT TO CACHE
-conan create tests/packages/library
+${export}
 build
 
 header RESET
-if ! capture ${remove} --remote ${remote}; then
+if ! capture ${remove_all} --remote redirectory; then
   expect "ERROR: 404: Not Found."
 else
   sleep 60
 fi
 
 header BUILD FROM SOURCE
-${upload}
-${remove}
+${upload_recipe}
+${remove_all}
 sleep 60
 ! capture ${install}
 expect "ERROR: Missing prebuilt package for '${reference}'" \
-  || expect "ERROR: ${reference} was not found in remote '${remote}'"
+  || expect "ERROR: ${reference} was not found in remote 'redirectory'"
 ${install} --build missing
 build
 
 header BUILD FROM BINARY
-${upload} --all
-${remove}
+${upload_all}
+${remove_all}
 sleep 60
 ${install}
 build
 
 header BUILD FROM SOURCE AGAIN
-${remove} --remote ${remote} --packages
-${remove}
+${remove_packages} --remote redirectory
+${remove_all}
 sleep 60
 ! capture ${install}
 expect "ERROR: Missing prebuilt package for '${reference}'"
@@ -105,23 +124,24 @@ ${install} --build missing
 build
 
 header RE-REMOVE
-${remove} --remote ${remote}
-${remove}
+${remove_all} --remote redirectory
+${remove_all}
 sleep 60
 ! capture ${install} --build missing
-expect "ERROR: ${reference} was not found in remote '${remote}'"
-! capture ${remove} --remote ${remote}
+expect "ERROR: ${reference} was not found in remote 'redirectory'" \
+  || expect "ERROR: Package '${reference}' not resolved"
+! capture ${remove_all} --remote redirectory
 expect "ERROR: 404: Not Found."
 
 header RE-UPLOAD
-conan create tests/packages/library
-${upload} --all
+${export}
+${upload_all}
 sleep 60
-${upload} --all
+${upload_all}
 
 header UNAUTHENTICATED
-conan user --clean
-${remove}
+${logout}
+${remove_all}
 ${install}
 
 header PASSED!
