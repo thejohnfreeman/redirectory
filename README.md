@@ -39,12 +39,14 @@ but free from the responsibility of operating a package server[^4].
 I will soon add instructions for how you can run your own Redirectory server
 for free on Google Cloud App Engine, just like I do.
 
-[^5]: I love Conan Center,
+[^5]: I love that Conan Center provides a convenient default registry
+of curated recipes for most widely-used packages,
 but I still want a frictionless package registry
-like I enjoy in other languages.
+like I enjoy in other language ecosystems.
 
-> :warning: **NOTE** :warning:
-> These instructions have not been written or tested for Conan 2, but I expect them to work much the same.
+Redirectory has been tested with Conan 1.x,
+with and without revisions enabled,
+and Conan 2.x, which always has revisions enabled.
 
 
 ## Authentication
