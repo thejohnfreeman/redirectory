@@ -14,6 +14,12 @@ const getLatest = (getRevisible) => async (req, res) => {
   res.send({ revision: id, time })
 }
 
+const getRevisions = (getRevisible) => async (req, res) => {
+  const { db, $resource: $revisible } = await getRevisible(req)
+  const revisions = model.getRevisions($revisible)
+  res.send({ revisions })
+}
+
 /*
  * GET /v2/conans/:recipe/revisions/:rrev/packages/:package/revisions/:prev/files/:filename
  * GET /v1/files/:recipe/:rrev/package/:package/:prev/:filename?signature&user&auth
@@ -158,14 +164,9 @@ export async function deleteRecipe(req, res) {
 }
 
 export const getRecipeLatest = getLatest(model.getRecipe)
+export const getRecipeRevisions = getRevisions(model.getRecipe)
 export const getRecipeDownloadUrls = getDownloadUrls(model.getRecipe)
 export const postRecipeUploadUrls = postUploadUrls(() => 'export')
-
-export async function getRecipeRevisions(req, res) {
-  const { db, $resource: $recipe } = await model.getRecipe(req)
-  const revisions = model.getRevisions($recipe)
-  res.send({ revisions })
-}
 
 export async function deleteRecipeRevision(req, res) {
   const mode = model.Mode.ReadWrite
@@ -194,12 +195,25 @@ export async function deleteRecipeRevisionPackages(req, res) {
 }
 
 export const getPackageLatest = getLatest(model.getPackage)
+export const getPackageRevisions = getRevisions(model.getPackage)
 
 export const getPackage = getFileSums(model.getLatestPackage)
 export const getPackageDownloadUrls = getDownloadUrls(model.getLatestPackage)
 export const postPackageUploadUrls = postUploadUrls(
   req => `package/${req.params.package}/0`
 )
+
+export async function deletePackageRevision(req, res) {
+  const mode = model.Mode.ReadWrite
+  const { db, $resource: $prev } = await model.getPackageRevision(req, mode)
+
+  await model.deleteRevision(db, $prev.value)
+  $prev.siblings.splice($prev.index, 1)
+  // TODO: What if that was the only revision? Should delete package too.
+  await model.save(db)
+
+  return res.send()
+}
 
 export const getPackageRevisionFiles = getFiles(model.getPackageRevision)
 export const getPackageRevisionFile = getFile(model.getPackageRevisionLevel)
@@ -238,6 +252,18 @@ export async function postRecipePackagesDelete(req, res) {
 export function getRecipeSearch(req, res) {
   // TODO: Implement?
   return res.status(501).send()
+}
+
+/*
+ * GET /v1/conans/:recipe/revisions/:rrev/search
+ * `conaninfo.txt` for latest prev of each package of rrev.
+ * 200 { ":package": { "content": ":conaninfo.txt" }, ... }
+ */
+export async function getRecipeRevisionSearch(req, res) {
+  const { db, $resource: $rrev } = await model.getRecipeRevision(req)
+  // TODO: Get content?
+  const entries = $rrev.value.packages.map($package => [$package.id, { content: '' }])
+  res.send(Object.fromEntries(entries))
 }
 
 // TODO: Improve.
