@@ -50,7 +50,7 @@ build() {
   dir="$(mktemp -d)"
   trap "rm -rf ${dir}" RETURN
   pushd ${dir}
-  conan install --remote redirectory ${root}
+  conan install --output-folder . --remote redirectory ${root}
   cmake -DCMAKE_TOOLCHAIN_FILE=conan_toolchain.cmake -DCMAKE_BUILD_TYPE=Release ${root}
   cmake --build .
   ./executable | tee ${output}
