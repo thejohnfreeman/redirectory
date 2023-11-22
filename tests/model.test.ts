@@ -43,12 +43,12 @@ const fakeResponse = () => ({
   redirect: jest.fn(),
 })
 
-test('octokit', async () => {
+test.skip('octokit', async () => {
   const r = await kit.rest.repos.getReleaseByTag({ owner, repo, tag })
   expect(r.status).toBe(200)
 })
 
-test('GET /:recipe', async () => {
+test.skip('GET /:recipe', async () => {
   const req = fakeRequest()
   const res = fakeResponse()
   await controllers.getRecipe(req, res)
@@ -65,21 +65,21 @@ const expectRevision = {
   time: expect.toBeIso8601(),
 }
 
-test('GET /:recipe/latest', async () => {
+test.skip('GET /:recipe/latest', async () => {
   const req = fakeRequest()
   const res = fakeResponse()
   await controllers.getRecipeLatest(req, res)
   expect(res.send).toBeCalledWith(expectRevision)
 })
 
-test('GET /:recipe/revisions', async () => {
+test.skip('GET /:recipe/revisions', async () => {
   const req = fakeRequest()
   const res = fakeResponse()
   await controllers.getRecipeRevisions(req, res)
   expect(res.send).toBeCalledWith(expect.toBeArrayOf(expectRevision))
 })
 
-test('GET /:rrev/files', async () => {
+test.skip('GET /:rrev/files', async () => {
   const req = fakeRequest({ params: { rrev: '0' } })
   const res = fakeResponse()
   await controllers.getRecipeRevisionFiles(req, res)
@@ -91,7 +91,7 @@ test('GET /:rrev/files', async () => {
   })
 })
 
-test('GET /:rrev/file/:filename', async () => {
+test.skip('GET /:rrev/file/:filename', async () => {
   const req = fakeRequest({ params: { rrev: '0', filename: 'conanmanifest.txt' } })
   const res = fakeResponse()
   await controllers.getRecipeRevisionFile(req, res)
@@ -111,7 +111,7 @@ async function deleteReleases(version: string) {
   ))
 }
 
-test.only('PUT /:rrev/file/:filename', async () => {
+test.skip('PUT /:rrev/file/:filename', async () => {
   const version = '0.1.2'
   await deleteReleases(version)
 

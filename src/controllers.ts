@@ -1,4 +1,5 @@
 import { newOctokit, parseBearer, parseRepository } from './octokit.js'
+import * as http from './http.js'
 import * as model from './model.js'
 import * as std from './stdlib.js'
 import jwt from 'jsonwebtoken'
@@ -266,27 +267,85 @@ export async function getRecipeRevisionSearch(req, res) {
   res.send(Object.fromEntries(entries))
 }
 
+// Query parameter for search function.
+// Must come in the form 'nameGlob[/versionGlob[@]]'.
+// Globs may use zero or more asterisks (*),
+// and may not use separators (/#@).
+// No other special characters are recognized.
+const PATTERN_SEARCH_QUERY = /^([^/#@]+)(?:\/([^/#@]+)@?)?$/
+
+// Tag for recipe release.
+// Must be a version string with an optional revision suffix,
+// i.e. 'version[#revision]'.
+// Conan limits revision identifiers to 51 alphanumeric characters.
+const PATTERN_TAG_RECIPE = /^([^/#@]+)(?:#[a-zA-Z0-9]{1,51})?$/
+
 // TODO: Improve.
 export async function getSearch(req, res) {
   const query = req.query.q
-  // TODO: Split name from version. For now, assume just name.
+
+  const results = []
+
+  let m = PATTERN_SEARCH_QUERY.exec(query)
+  if (!m) {
+    // Invalid query strings quietly return zero results.
+    return res.send({ results })
+  }
+  const nameGlob = m[1]
+  const versionGlob = m[2]
+
+  // GitHub search only matches substrings, not regexes or globs.
+  // Take first non-empty string from `glob.split('*')`.
+  const nameSubstring = nameGlob.split('*').filter(x => x)[0]
+  if (!nameSubstring) {
+    // An empty string or single asterisk typically returns all packages.
+    // For now, we return none.
+    // TODO: Implement match-all query.
+    return res.send({ results })
+  }
 
   const { octokit } = newOctokit(req)
   const r1 = await octokit.rest.search.repos({
-    q: `${query} in:name topic:redirectory`,
+    q: `${nameSubstring} in:name topic:redirectory`,
     sort: 'stars',
     order: 'desc',
   })
 
-  const results = []
+  const nameRegex = new RegExp(
+    '^' + nameGlob.split('*').map(std.escapeRegExp).join('.*') + '$'
+  )
   for (const result of r1.data.items) {
-    const owner = result.owner.login
     const repo = result.name
+    // Now we can pattern match against the full given query.
+    // Conan does _NOT_ match on substrings in the absence of a glob.
+    // The given pattern must match the entire name.
+    if (!nameRegex.exec(repo)) {
+      continue
+    }
+    const owner = result.owner.login
     const r2 = await octokit.rest.repos.listReleases({ owner, repo })
     for (const release of r2.data) {
       const tag = release.tag_name
+      let m = PATTERN_TAG_RECIPE.exec(tag)
+      if (!m) {
+        // We are looking for only recipe releases.
+        continue
+      }
+      const version = m[1]
+      // The version filter is optional.
+      if (versionGlob) {
+        const versionRegex = new RegExp(
+          '^' + versionGlob.split('*').map(std.escapeRegExp).join('.*') + '$'
+        )
+        if (!versionRegex.exec(version)) {
+          continue
+        }
+      }
+      if (!release.assets.map(a => a.name).includes('conanmanifest.txt')) {
+        continue
+      }
       // TODO: Good way to translate backwards from release to reference?
-      results.push(`${repo}/${tag}@github/${owner}`)
+      results.push(`${repo}/${version}@github/${owner}`)
     }
   }
 

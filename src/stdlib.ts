@@ -61,3 +61,10 @@ export function readStream(stream): Promise<string> {
     stream.on('error', error => reject(error))
   })
 }
+
+// Taken from MDN.
+// https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions#escaping
+export function escapeRegExp(string) {
+  // $& means the whole matched string
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
