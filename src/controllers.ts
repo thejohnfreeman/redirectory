@@ -280,7 +280,6 @@ const PATTERN_SEARCH_QUERY = /^([^/#@]+)(?:\/([^/#@]+)@?)?$/
 // Conan limits revision identifiers to 51 alphanumeric characters.
 const PATTERN_TAG_RECIPE = /^([^/#@]+)(?:#[a-zA-Z0-9]{1,51})?$/
 
-// TODO: Improve.
 export async function getSearch(req, res) {
   const query = req.query.q
 
