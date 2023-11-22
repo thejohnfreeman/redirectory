@@ -8,7 +8,8 @@
     "start": "node dist/serve.js",
     "build": "tsc",
     "format": "prettier src --write",
-    "test": "jest"
+    "test": "jest",
+    "deploy": "gcloud app deploy"
   },
   "author": "John Freeman <jfreeman08@gmail.com>",
   "license": "ISC",
