@@ -343,7 +343,6 @@ export async function getSearch(req, res) {
       if (!release.assets.map(a => a.name).includes('conanmanifest.txt')) {
         continue
       }
-      // TODO: Good way to translate backwards from release to reference?
       results.push(`${repo}/${version}@github/${owner}`)
     }
   }
