@@ -5,6 +5,8 @@ const port = process.env.PORT || 9595
 
 const app = express()
 
+app.set('trust proxy', true)
+
 app.use(router)
 
 app.listen(port, () => {
