@@ -130,7 +130,7 @@ router.get('/', (req, res) => {
 })
 
 // The catcher for all unknown routes.
-router.all('*', (req, res) => {
+router.all('/*splat', (req, res) => {
   console.warn('unknown route', req.method, req.originalUrl)
   res.status(501).send()
 })
