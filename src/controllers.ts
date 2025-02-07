@@ -1,7 +1,7 @@
-import { newOctokit, parseBearer, parseRepository } from './octokit'
-import * as http from './http'
-import * as model from './model'
-import * as std from './stdlib'
+import { newOctokit, parseBearer, parseRepository } from './octokit.js'
+import * as http from './http.js'
+import * as model from './model.js'
+import * as std from './stdlib.js'
 import jwt from 'jsonwebtoken'
 
 function mapObject(object, fn) {

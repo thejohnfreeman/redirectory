@@ -1,5 +1,5 @@
 import express from 'express'
-import router from './router'
+import router from './router.js'
 
 const port = process.env.PORT || 9595
 

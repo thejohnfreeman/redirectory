@@ -1,6 +1,6 @@
 import fs from 'fs'
 import { Octokit } from 'octokit'
-import { badRequest } from './http'
+import { badRequest } from './http.js'
 import { createOAuthAppAuth } from '@octokit/auth-oauth-app'
 
 const verbose = parseInt(process.env.VERBOSE) || 0

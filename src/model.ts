@@ -1,8 +1,8 @@
 import express from 'express'
 import path from 'path'
-import * as http from './http'
-import { Client, getResponse, Repository } from './octokit'
-import * as std from './stdlib'
+import * as http from './http.js'
+import { Client, getResponse, Repository } from './octokit.js'
+import * as std from './stdlib.js'
 import { createHash } from 'node:crypto'
 
 const verbose = parseInt(process.env.VERBOSE) || 0

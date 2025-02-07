@@ -1,7 +1,7 @@
 import express from 'express'
-import { parseBearer } from './octokit'
-import * as controllers from './controllers'
-import * as http from './http'
+import { parseBearer } from './octokit.js'
+import * as controllers from './controllers.js'
+import * as http from './http.js'
 import winston from 'winston'
 import expressWinston from 'express-winston'
 
