@@ -2,8 +2,8 @@
   "include": ["src/**/*.ts"],
   "compilerOptions": {
     "esModuleInterop": true,
-    "target": "es2020",
-    "module": "es2020",
+    "target": "es2022",
+    "module": "es2022",
     "moduleResolution": "bundler",
     "types": ["node", "jest"],
     "outDir": "dist"
