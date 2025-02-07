@@ -4,7 +4,7 @@
     "esModuleInterop": true,
     "target": "es2022",
     "module": "es2022",
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "types": ["node", "jest"],
     "outDir": "dist"
   }
