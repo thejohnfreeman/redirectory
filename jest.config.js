@@ -1,6 +1,3 @@
 export default {
-  preset: 'ts-jest',
-  moduleNameMapper: {
-    '^(\\.\\.?\\/.+)\\.jsx?$': '$1'
-  },
+  preset: 'ts-jest/presets/default-esm',
 }

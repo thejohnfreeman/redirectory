@@ -2,7 +2,7 @@ import 'expect-more-jest'
 import { readFileSync } from 'fs'
 import { Octokit } from 'octokit'
 import { Readable } from 'node:stream'
-import * as controllers from '../src/controllers.js'
+import * as controllers from '../src/controllers'
 
 const auth = readFileSync('github.token').toString().trim()
 const kit = new Octokit({ auth })
