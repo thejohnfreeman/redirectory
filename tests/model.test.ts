@@ -1,7 +1,10 @@
-import 'expect-more-jest'
 import { readFileSync } from 'fs'
-import { Octokit } from 'octokit'
 import { Readable } from 'node:stream'
+
+import 'expect-more-jest'
+import { jest } from '@jest/globals'
+import { Octokit } from 'octokit'
+
 import * as controllers from '../src/controllers.js'
 
 const auth = readFileSync('github.token').toString().trim()
@@ -9,7 +12,8 @@ const kit = new Octokit({ auth })
 
 const owner = 'thejohnfreeman'
 const repo = 'zlib'
-const tag = '1.2.13'
+const tag = '0.1.0'
+const rrev = 'cd07abece43e2ce4ae64cd32a69fc6ca'
 
 const bearer = 'Bearer ' + Buffer.from(`${owner}:${auth}`).toString('base64')
 
@@ -43,56 +47,58 @@ const fakeResponse = () => ({
   redirect: jest.fn(),
 })
 
-test.skip('octokit', async () => {
+test('octokit', async () => {
   const r = await kit.rest.repos.getReleaseByTag({ owner, repo, tag })
   expect(r.status).toBe(200)
 })
 
-test.skip('GET /:recipe', async () => {
+const REGEXP_DIGEST = /[0-9a-fA-F]+/
+
+test('GET /:recipe', async () => {
   const req = fakeRequest()
   const res = fakeResponse()
   await controllers.getRecipe(req, res)
   expect(res.send).toBeCalledWith({
-    'conanfile.py': '',
-    'conanmanifest.txt': '',
-    'conan_export.tgz': '',
-    'conan_sources.tgz': '',
+    'conanfile.py': expect.stringMatching(REGEXP_DIGEST),
+    'conanmanifest.txt': expect.stringMatching(REGEXP_DIGEST),
+    'conan_sources.tgz': expect.stringMatching(REGEXP_DIGEST),
   })
 })
 
 const expectRevision = {
-  revision: expect.stringMatching(/[a-z0-9]+/),
+  revision: expect.stringMatching(REGEXP_DIGEST),
   time: expect.toBeIso8601(),
 }
 
-test.skip('GET /:recipe/latest', async () => {
+test('GET /:recipe/latest', async () => {
   const req = fakeRequest()
   const res = fakeResponse()
   await controllers.getRecipeLatest(req, res)
   expect(res.send).toBeCalledWith(expectRevision)
 })
 
-test.skip('GET /:recipe/revisions', async () => {
+test('GET /:recipe/revisions', async () => {
   const req = fakeRequest()
   const res = fakeResponse()
   await controllers.getRecipeRevisions(req, res)
-  expect(res.send).toBeCalledWith(expect.toBeArrayOf(expectRevision))
+  expect(res.send).toBeCalledWith({ revisions: expect.toBeArrayOf(expectRevision) })
 })
 
-test.skip('GET /:rrev/files', async () => {
-  const req = fakeRequest({ params: { rrev: '0' } })
+test('GET /:rrev/files', async () => {
+  const req = fakeRequest({ params: { rrev } })
   const res = fakeResponse()
   await controllers.getRecipeRevisionFiles(req, res)
   expect(res.send).toBeCalledWith({
-    'conanfile.py': {},
-    'conanmanifest.txt': {},
-    'conan_export.tgz': {},
-    'conan_sources.tgz': {},
+    files: {
+      'conanfile.py': {},
+      'conanmanifest.txt': {},
+      'conan_sources.tgz': {},
+    }
   })
 })
 
-test.skip('GET /:rrev/file/:filename', async () => {
-  const req = fakeRequest({ params: { rrev: '0', filename: 'conanmanifest.txt' } })
+test('GET /:rrev/file/:filename', async () => {
+  const req = fakeRequest({ params: { rrev, filename: 'conanmanifest.txt' } })
   const res = fakeResponse()
   await controllers.getRecipeRevisionFile(req, res)
   expect(res.redirect).toBeCalledWith(
